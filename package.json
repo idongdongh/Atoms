@@ -1,0 +1,26 @@
+{
+  "name": "atoms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "dev": "concurrently -k -n api,web,worker -c blue,green,magenta \"pnpm --filter @atoms/api dev\" \"pnpm --filter @atoms/web dev\" \"pnpm --filter @atoms/agent-worker dev\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm --filter @atoms/contracts build && pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "26.3.0",
+    "concurrently": "10.0.5",
+    "prettier": "3.9.6",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}

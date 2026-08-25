@@ -1,0 +1,19 @@
+{
+  "name": "@atoms/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "5.12.1"
+  },
+  "devDependencies": {
+    "tsx": "4.23.12"
+  }
+}
