@@ -1259,7 +1259,7 @@ export function App() {
                     (preview?.url ? (
                       <iframe
                         title="项目 Preview"
-                        key={selected.currentCommit}
+                        key={`${selected.currentCommit}:${preview.updatedAt}`}
                         src={preview.url}
                         className="h-full w-full flex-1 bg-white"
                       />
