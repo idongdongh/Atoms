@@ -314,6 +314,7 @@ export function App() {
   useEffect(() => {
     if (!activeRun || terminalStatuses.has(activeRun.status)) return;
     const source = new EventSource(`/api/runs/${activeRun.id}/events/stream`);
+    let sawTerminalEvent = false;
     const onEvent = (rawEvent: Event) => {
       try {
         const event = JSON.parse(
@@ -336,6 +337,7 @@ export function App() {
           event.type === "run.failed" ||
           event.type === "run.cancelled"
         ) {
+          sawTerminalEvent = true;
           void requestJson<{ run: AgentRun; messages: ChatMessage[] }>(
             `/api/runs/${activeRun.id}`,
           )
@@ -374,7 +376,12 @@ export function App() {
       }
     };
     for (const type of eventTypes) source.addEventListener(type, onEvent);
-    source.onerror = () => setError("事件连接暂时中断，正在等待重连");
+    source.onerror = () => {
+      // The server closes the stream once the run reaches a terminal state;
+      // that normal close must not surface as a reconnect warning.
+      if (sawTerminalEvent) return;
+      setError("事件连接暂时中断，正在等待重连");
+    };
     return () => {
       for (const type of eventTypes) source.removeEventListener(type, onEvent);
       source.close();
