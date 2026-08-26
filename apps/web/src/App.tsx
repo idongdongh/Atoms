@@ -11,6 +11,7 @@ import {
   FileCode2,
   Globe,
   History,
+  Home,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -188,6 +189,7 @@ export function App() {
   >("preview");
   const [showVersions, setShowVersions] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showNewAppInput, setShowNewAppInput] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const chatPanelRef = useRef<ImperativePanelHandle>(null);
@@ -376,6 +378,29 @@ export function App() {
     }, 500);
     return () => window.clearInterval(timer);
   }, [selectedId, preview?.status]);
+
+  async function createProjectWithName(projectName: string) {
+    if (creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const { project } = await requestJson<{ project: Project }>(
+        "/api/projects",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: projectName }),
+        },
+      );
+      setProjects((current) => [project, ...current]);
+      setSelectedId(project.id);
+      setName(generateCuteAppName());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "项目创建失败");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -770,15 +795,36 @@ export function App() {
   );
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      <header className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-(--sidebar) px-2">
-        <div className="flex items-center gap-1">
+    <div className="flex h-screen bg-background">
+      <aside
+        className={cn(
+          "flex shrink-0 flex-col border-r border-border bg-(--sidebar) text-sidebar-foreground transition-all",
+          sidebarCollapsed ? "w-14" : "w-60",
+        )}
+      >
+        <div className="flex items-center gap-1 px-2 py-2.5">
+          {!sidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setSelectedId(null)}
+              className="flex min-w-0 items-center gap-2 pl-1 font-semibold"
+              aria-label="回到主页"
+            >
+              <span className="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground">
+                A
+              </span>
+              <span className="truncate">Atoms</span>
+            </button>
+          )}
           <Button
             variant="ghost"
             size="icon"
             aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
             onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            className="text-sidebar-foreground hover:bg-sidebar-accent/60"
+            className={cn(
+              "text-sidebar-foreground hover:bg-sidebar-accent/60",
+              !sidebarCollapsed && "ml-auto",
+            )}
           >
             {sidebarCollapsed ? (
               <PanelLeftOpen className="size-4" />
@@ -786,35 +832,26 @@ export function App() {
               <PanelLeftClose className="size-4" />
             )}
           </Button>
-          <button
-            type="button"
-            onClick={() => setSelectedId(null)}
-            className="flex items-center gap-2 pl-1 font-semibold text-sidebar-foreground"
-            aria-label="回到主页"
-          >
-            <span className="grid size-6 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground">
-              A
-            </span>
-            Atoms
-          </button>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {authUser.email}
-          <Button variant="ghost" size="sm" onClick={() => void logout()}>
-            <LogOut className="size-4" />
-            退出
-          </Button>
-        </div>
-      </header>
-      <div className="flex min-h-0 flex-1">
-        <aside
-          className={cn(
-            "shrink-0 overflow-y-auto border-r border-border bg-(--sidebar) p-2 text-sidebar-foreground transition-all",
-            sidebarCollapsed ? "w-14" : "w-60",
-          )}
-        >
-          {!sidebarCollapsed && (
-            <form onSubmit={createProject} className="mb-2.5 flex gap-1.5">
+        <div className={cn("px-2 pb-2", sidebarCollapsed && "grid place-items-center")}>
+          {sidebarCollapsed ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="新建应用"
+              onClick={() => void createProjectWithName(generateCuteAppName())}
+              className="text-sidebar-foreground hover:bg-sidebar-accent/60"
+            >
+              <Plus className="size-4" />
+            </Button>
+          ) : showNewAppInput ? (
+            <form
+              onSubmit={(event) => {
+                void createProject(event);
+                if (name.trim()) setShowNewAppInput(false);
+              }}
+              className="flex gap-1.5"
+            >
               <label htmlFor="project-name" className="sr-only">
                 新应用名称
               </label>
@@ -825,68 +862,119 @@ export function App() {
                 placeholder="新应用名称…"
                 maxLength={80}
                 disabled={creating}
+                autoFocus
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setShowNewAppInput(false);
+                    setName("");
+                  }
+                }}
               />
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!name.trim() || creating}
-              >
-                新建
+              <Button type="submit" size="sm" disabled={!name.trim() || creating}>
+                建
               </Button>
             </form>
+          ) : (
+            <Button
+              className="w-full"
+              onClick={() => {
+                setName(generateCuteAppName());
+                setShowNewAppInput(true);
+              }}
+            >
+              <Plus className="size-4" />
+              新建应用
+            </Button>
           )}
+        </div>
+        <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+          <button
+            type="button"
+            onClick={() => setSelectedId(null)}
+            className={cn(
+              "flex w-full items-center rounded-md text-left",
+              sidebarCollapsed ? "justify-center p-2" : "gap-2 px-2 py-2",
+              !selected
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "hover:bg-sidebar-accent/60",
+            )}
+            title="主页"
+          >
+            <Home className="size-4 shrink-0" />
+            {!sidebarCollapsed && <span className="text-sm">主页</span>}
+          </button>
           {!sidebarCollapsed && (
-            <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">
+            <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">
               应用 · {projects.length}
             </p>
           )}
-          <nav className="grid gap-0.5">
-            {state === "loading" && !sidebarCollapsed && (
-              <p className="px-3 py-2 text-sm text-muted-foreground">
-                正在加载项目…
-              </p>
-            )}
-            {state === "ready" && projects.length === 0 && !sidebarCollapsed && (
-              <p className="px-3 py-2 text-sm text-muted-foreground">
-                创建第一个应用，开始与 Agent 协作。
-              </p>
-            )}
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                type="button"
-                onClick={() => setSelectedId(project.id)}
-                title={project.name}
-                className={cn(
-                  "flex w-full items-center justify-start rounded-md text-left",
-                  sidebarCollapsed
-                    ? "justify-center p-2"
-                    : "gap-2 py-2 pl-2 pr-2",
-                  project.id === selectedId
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "hover:bg-sidebar-accent/60",
-                )}
+          {state === "loading" && !sidebarCollapsed && (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              正在加载项目…
+            </p>
+          )}
+          {state === "ready" && projects.length === 0 && !sidebarCollapsed && (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              在主页描述一个想法，或点上方新建。
+            </p>
+          )}
+          {projects.map((project) => (
+            <button
+              key={project.id}
+              type="button"
+              onClick={() => setSelectedId(project.id)}
+              title={project.name}
+              className={cn(
+                "flex w-full items-center justify-start rounded-md text-left",
+                sidebarCollapsed
+                  ? "justify-center p-2"
+                  : "gap-2 py-2 pl-2 pr-2",
+                project.id === selectedId
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "hover:bg-sidebar-accent/60",
+              )}
+            >
+              <span
+                className="grid size-7 shrink-0 place-items-center rounded-md text-[10px] font-semibold"
+                style={avatarStyle(project.id)}
+                aria-hidden="true"
               >
-                <span
-                  className="grid size-7 shrink-0 place-items-center rounded-md text-[10px] font-semibold"
-                  style={avatarStyle(project.id)}
-                  aria-hidden="true"
-                >
-                  {initials(project.name)}
-                </span>
-                {!sidebarCollapsed && (
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm">{project.name}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {project.currentCommit.slice(0, 7)}
-                    </span>
+                {initials(project.name)}
+              </span>
+              {!sidebarCollapsed && (
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm">{project.name}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {project.currentCommit.slice(0, 7)}
                   </span>
-                )}
-              </button>
-            ))}
-          </nav>
-        </aside>
-        <main className="flex min-w-0 flex-1 flex-col border-l border-border bg-background">
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div
+          className={cn(
+            "flex items-center gap-2 border-t border-border p-2",
+            sidebarCollapsed && "justify-center",
+          )}
+        >
+          {!sidebarCollapsed && (
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+              {authUser.email}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="退出登录"
+            onClick={() => void logout()}
+            className="text-sidebar-foreground hover:bg-sidebar-accent/60"
+          >
+            <LogOut className="size-4" />
+          </Button>
+        </div>
+      </aside>
+      <main className="flex min-w-0 flex-1 flex-col bg-background">
           {!selected || messages.length === 0 ? (
             homeScreen
           ) : (
@@ -1272,7 +1360,6 @@ export function App() {
             </PanelGroup>
           )}
         </main>
-      </div>
     </div>
   );
 }
