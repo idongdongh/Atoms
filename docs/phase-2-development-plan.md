@@ -10,21 +10,24 @@
 
 ### 0.1 已交付（第一阶段效果 + Demo 薄切片）
 
-| 能力 | 状态 | 说明 |
-| --- | --- | --- |
-| Builder 内核主链 | ✅ | 项目创建（模板+Git 初始版本）→ Chat 驱动 Agent（结构化工具）→ 持久事件流/SSE → 每轮自动 commit → 版本列表与非破坏性回滚 |
-| 对抗式审查与加固 | ✅ | 事件序列原子化、状态迁移事务化、写锁 stale 修正、模型超时、对话历史入上下文、环境白名单、进程组回收 |
-| 自有子域发布 | ✅ | 受控构建 → 不可变 release 目录 → 激活指针 → `/published/<id>/` 公网访问 + 秒级回退 |
-| 账号与会话隔离 | ✅ | 注册/登录/登出（scrypt + 会话 Cookie）、全资源按用户隔离、变更操作客户端头防护、`/published` 与 `/p/` 公开 |
-| 预览网关 | ✅ | 本地直连 dev server（跨源）；生产走 `ATOMS_PREVIEW_PUBLIC_ORIGIN` + 公开 `/p/<id>/*` 路由（HTML 注入 base） |
-| 前端体验 | ✅ | 移植 Dyad 前端栈（Tailwind v4 token 全套 + shadcn 组件 + 双状态主页/分栏 + 面板与侧栏展开收起），Manus 暖纸主题 |
+| 能力             | 状态 | 说明                                                                                                                    |
+| ---------------- | ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| Builder 内核主链 | ✅   | 项目创建（模板+Git 初始版本）→ Chat 驱动 Agent（结构化工具）→ 持久事件流/SSE → 每轮自动 commit → 版本列表与非破坏性回滚 |
+| 对抗式审查与加固 | ✅   | 事件序列原子化、状态迁移事务化、写锁 stale 修正、模型超时、对话历史入上下文、环境白名单、进程组回收                     |
+| 自有子域发布     | ✅   | 受控构建 → 不可变 release 目录 → 激活指针 → `/published/<id>/` 公网访问 + 秒级回退                                      |
+| 账号与会话隔离   | ✅   | 注册/登录/登出（scrypt + 会话 Cookie）、全资源按用户隔离、变更操作客户端头防护、`/published` 与 `/p/` 公开              |
+| 预览网关         | ✅   | 本地直连 dev server（跨源）；生产走 `ATOMS_PREVIEW_PUBLIC_ORIGIN` + 公开 `/p/<id>/*` 路由（HTML 注入 base）             |
+| 前端体验         | ✅   | 移植 Dyad 前端栈（Tailwind v4 token 全套 + shadcn 组件 + 双状态主页/分栏 + 面板与侧栏展开收起），Manus 暖纸主题         |
 
-### 0.2 剩余里程碑（按优先级）
+### 0.2 剩余里程碑（按优先级，2026-08-26 更新）
 
-1. **M-B1 全栈生成（Supabase lite）**：模板集成 supabase-js（anon key + RLS 直连）；Agent 增加建表/迁移、RLS 策略受控工具（服务端 service_role）。验收：一句话生成带数据库 CRUD 的应用，刷新数据仍在。**前置：平台 Supabase 项目三项凭据（URL / anon key / service_role key）。**
-2. **M-B0 交付物**：笔试说明文档（思路/取舍/完成度/扩展优先级，引用本计划）；Dockerfile、docker-compose.yml、Caddyfile（主站 + `/api` + `/p` 预览源 + `/published`）、环境变量清单。
-3. **M-部署验收**：腾讯云香港轻量 2C2G 上线、域名泛解析、DeepSeek 真模型接入（`ATOMS_MODEL_*` 三项）、演示前冒烟（含 Supabase 免费档休眠激活）。
-4. **M-运行加固（部署前完成）**：预览沙箱空闲回收（2C2G 内存约束）；预览失败自动重试一次；（可选）`run_typecheck/run_build` 工具与浏览器 E2E 冒烟。
+1. **M-B1 全栈生成（Supabase lite）**：模板集成 supabase-js（anon key + RLS 直连）；Agent 增加建表/迁移、RLS 策略受控工具（服务端 service_role）。验收：一句话生成带数据库 CRUD 的应用，刷新数据仍在。**前置：平台 Supabase 项目三项凭据（URL / anon key / service_role key）。**（对标参考：Dyad `src/ipc/handlers/supabase_handlers.ts`、`createFromTemplate.ts`。）
+2. **M-部署验收**：腾讯云香港轻量 2C2G 上线（`docker compose up -d --build`，见 `docs/deployment.md`）、域名解析、DeepSeek 真模型接入（`ATOMS_MODEL_*` 四项）、演示前冒烟（含 Supabase 免费档休眠激活）。
+
+已完成：
+
+- ✅ **M-B0 交付物**：笔试说明文档（[SUBMISSION.md](../SUBMISSION.md)：思路/取舍/完成度/扩展优先级）；部署产物（`Dockerfile` 多阶段 + `docker-entrypoint.sh` + `docker-compose.yml` + `Caddyfile` + `.env.example` 环境变量清单 + `docs/deployment.md` 操作手册）。镜像构建验证随 M-部署首装执行。
+- ✅ **M-运行加固（部署前完成）**：预览空闲回收（API 按分钟节流记录访问，worker 每 2s 对账，默认 10 分钟无访问停止 dev server，活跃 Run 跳过）；预览失败自动重试一次；休眠预览打开即唤醒（API 置 wake 标志、worker 重启、前端自动轮询接上）；代理上游不可达自愈（置 wake 触发重启）。可选的 `run_typecheck/run_build` 工具与浏览器 E2E 冒烟未实现。
 
 ### 0.3 明确不在笔试 Demo 实现
 

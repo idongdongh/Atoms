@@ -6,9 +6,11 @@ Atoms 是一个面向 Web 的 AI 应用生成平台。用户通过自然语言�
 
 ## 当前状态
 
-项目已进入第一阶段开发，并已交付可运行的本地纵向切片：Monorepo 与 Web/API/Worker 骨架、运行时 Contract 与状态机、本地持久化元数据和事件序列、固定 React/Vite 模板、项目创建与文件/版本 API，以及带路径隔离、原子写入、Git 版本和项目写锁的本地 Workspace。Builder 可以提交自然语言需求，Worker 通过结构化工具修改文件、提交版本、回放 SSE 活动，并在启用本地 Preview Provider 后启动 Vite iframe。真实模型可通过 OpenAI-compatible 环境变量接入；本地默认开发命令使用显式标注的 Demo Model。
+第一阶段 Builder 内核已交付并通过对抗式审查加固：Monorepo 与三平面骨架（Web/API/Worker）、运行时 Contract 与状态机、SQLite 元数据与可重放事件流、本地 Git Workspace、结构化工具 Agent 主链（每轮自动 commit、非破坏性回滚）、预览网关与账号会话隔离均已可用；`pnpm check`（格式/类型/测试/构建）全绿。
 
-当前 SQLite、Demo Model 和 Local Development Sandbox 只用于本地开发与 Contract 验证。真实远程隔离 Sandbox、Preview Gateway、PostgreSQL/持久队列、临时工作树回滚和完整故障恢复仍未接入，因此第一阶段的生产验收尚未完成。
+第二阶段 Demo 轨道已交付：自有路径发布与秒级回退、Dyad 前端移植（Manus 主题）、预览生命周期加固（空闲回收、失败重试、打开即唤醒），以及 Docker Compose + Caddy 部署产物。剩余：Supabase 全栈生成（M-B1，等凭据）与线上部署验收。笔试评估请先读 [SUBMISSION.md](SUBMISSION.md)，部署见 [docs/deployment.md](docs/deployment.md)。
+
+当前 SQLite、Demo Model 和 Local Development Sandbox 只用于本地开发与 Contract 验证。真实远程隔离 Sandbox、PostgreSQL/持久队列、GitHub 同步和托管数据库接入仍未完成；Demo 部署形态与企业级演进路径见 [ADR 0005](docs/adr/0005-demo-runtime-topology.md) 与 [ADR 0006](docs/adr/0006-generated-app-data-and-publish.md)。
 
 第一阶段目标是完成 Builder 内核：
 
@@ -42,6 +44,7 @@ pnpm dev
 - [文档目录说明](docs/README.md)
 - [第一阶段开发计划](docs/phase-1-development-plan.md)
 - [第二阶段开发计划](docs/phase-2-development-plan.md)
+- [笔试交付说明](SUBMISSION.md) / [部署手册](docs/deployment.md)
 
 ## 目录结构
 
@@ -50,6 +53,12 @@ Atoms/
 ├── AGENTS.md                         # AI 开发助手的项目约束
 ├── PRODUCT.md                        # 产品用户、体验原则与无障碍基线
 ├── README.md                         # 项目定位、状态与目录说明
+├── SUBMISSION.md                     # 笔试交付说明（思路/取舍/完成度）
+├── Dockerfile                        # 多阶段构建（runtime 应用 + web 静态）
+├── docker-compose.yml                # atoms + caddy 两服务编排
+├── Caddyfile                         # 反向代理、自动 HTTPS、SSE 不缓冲
+├── docker-entrypoint.sh              # 容器内同时运行 API 与 Worker
+├── .env.example                      # 环境变量清单（密钥只进 .env）
 ├── package.json                      # Monorepo 命令与统一开发依赖
 ├── pnpm-workspace.yaml               # pnpm 工作区定义
 ├── tsconfig.base.json                # 共享 TypeScript 严格配置
@@ -61,13 +70,14 @@ Atoms/
 │   ├── contracts/                    # Zod 协议与状态机
 │   ├── db/                           # 本地持久层与可替换存储边界
 │   ├── workspace-sdk/                # Workspace 接口、Git 实现与安全边界
-│   └── sandbox-sdk/                  # Sandbox 接口与 Fake 实现
+│   └── sandbox-sdk/                  # Sandbox 接口与受控本地实现
 ├── templates/
-│   └── react-vite/                   # 第一阶段固定项目模板
+│   └── react-vite/                   # 生成应用的起步模板
 ├── docs/                             # 架构、计划和开发文档
 │   ├── README.md                     # 文档目录维护约定
 │   ├── adr/                          # 架构决策记录
 │   ├── phase-1-development-plan.md   # Builder 内核第一阶段开发计划
-│   └── phase-2-development-plan.md   # 全栈交付与生产发布第二阶段开发计划
+│   ├── phase-2-development-plan.md   # 全栈交付与生产发布第二阶段开发计划
+│   └── deployment.md                 # 笔试 Demo 生产部署手册
 └── dyad/                             # 本地参考仓库，已忽略，不属于项目交付物
 ```
