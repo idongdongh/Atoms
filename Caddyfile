@@ -8,10 +8,20 @@
 
 	route {
 		# Run event streams are SSE: disable buffering so events arrive while
-		# the agent is still working.
+		# the agent is still working. The API registers these routes without
+		# the /api prefix, so it must be stripped here too.
 		@sse path /api/runs/*/events/stream*
-		reverse_proxy @sse atoms:3000 {
-			flush_interval -1
+		handle @sse {
+			uri strip_prefix /api
+			reverse_proxy atoms:3000 {
+				flush_interval -1
+			}
+		}
+
+		# Liveness probe straight to the API (otherwise it hits the SPA
+		# fallback and returns index.html with a 200).
+		handle /health {
+			reverse_proxy atoms:3000
 		}
 
 		# Builder API lives behind the /api prefix; strip it before proxying.

@@ -9,7 +9,8 @@
   浏览器 ── 443 ──▶ │ caddy 容器                   │
                     │  /            → /srv/web 静态 │  (builder SPA，多阶段构建产物)
                     │  /api/*       → atoms:3000   │  (strip /api 前缀)
-                    │  /p/*         → atoms:3000   │  (公开预览网关, SSE 不缓冲)
+                    │  /health      → atoms:3000   │  (存活探测，绕过 SPA fallback)
+                    │  /p/*         → atoms:3000   │  (公开预览网关)
                     │  /published/* → atoms:3000   │  (已发布应用静态服务)
                     └──────────────┬──────────────┘
                                    ▼
@@ -54,7 +55,7 @@ docker compose up -d --build
 
 # 4. 确认健康
 docker compose ps          # atoms 应为 healthy
-curl -fsS https://你的域名/health || curl -fsS https://你的域名/api/health
+curl -fsS https://你的域名/health
 ```
 
 浏览器打开 `https://你的域名`，注册账号，发一条 prompt 即可验证主链。
@@ -106,3 +107,4 @@ docker compose up -d
 - SSH 只用密钥登录，禁用密码（镜像默认即如此）。
 - 容器以 root 运行是 Demo 权衡（Git 工作区属主简单）；对外暴露面只有 Caddy 的 80/443。
 - 平台自身接口除 `/health`、`/auth/*`、`/p/*`、`/published/*` 外均需会话；写操作额外要求 `x-atoms-client` 头。
+- 公开的 `/p/*` 只读代理：其 upstream 失败不会触发预览重启（只有登录后的构建器路径会），互联网流量无法强制本机重启 dev server。

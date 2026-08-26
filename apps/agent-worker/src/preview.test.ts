@@ -1,22 +1,29 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore } from "@atoms/db";
 import type { PreviewProcess, PreviewProvider } from "@atoms/sandbox-sdk";
-import { reconcileProjectPreviews, startProjectPreview } from "./preview.js";
+import {
+  isProjectPreviewStarting,
+  reconcileProjectPreviews,
+  startProjectPreview,
+} from "./preview.js";
 
 class FakePreviewProvider implements PreviewProvider {
   readonly starts: string[] = [];
   readonly stops: string[] = [];
   #failuresRemaining: number;
+  #gate: (() => Promise<void>) | null;
 
-  constructor(failStarts = 0) {
+  constructor(failStarts = 0, gate: (() => Promise<void>) | null = null) {
     this.#failuresRemaining = failStarts;
+    this.#gate = gate;
   }
 
   async start(input: {
     projectId: string;
     workspaceRoot: string;
   }): Promise<PreviewProcess> {
+    if (this.#gate) await this.#gate();
     this.starts.push(input.projectId);
     if (this.#failuresRemaining-- > 0) {
       throw new Error("dev server crashed");
@@ -74,6 +81,53 @@ describe("startProjectPreview", () => {
       port: 4200,
     });
     expect(events).toEqual(["preview.starting", "preview.ready"]);
+    store.close();
+  });
+
+  it("serializes concurrent starts for the same project", async () => {
+    const store = new ControlPlaneStore(":memory:");
+    const projectId = seedProject(store);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const provider = new FakePreviewProvider(0, () => gate);
+    const events: string[] = [];
+    const track = (event: { type: string }) => events.push(event.type);
+
+    const first = startProjectPreview({
+      store,
+      previewProvider: provider,
+      projectId,
+      workspaceRoot: `/tmp/workspaces/${projectId}`,
+      emit: track,
+    });
+    const second = startProjectPreview({
+      store,
+      previewProvider: provider,
+      projectId,
+      workspaceRoot: `/tmp/workspaces/${projectId}`,
+      emit: track,
+    });
+
+    expect(isProjectPreviewStarting(projectId)).toBe(true);
+    release();
+    await Promise.all([first, second]);
+
+    // The second start may only begin once the first fully finished; with
+    // interleaving the order would be starting/starting/ready/ready.
+    expect(events).toEqual([
+      "preview.starting",
+      "preview.ready",
+      "preview.starting",
+      "preview.ready",
+    ]);
+    expect(provider.starts).toEqual([projectId, projectId]);
+    expect(store.getProjectPreview(projectId)).toMatchObject({
+      status: "running",
+      port: 4200,
+    });
+    expect(isProjectPreviewStarting(projectId)).toBe(false);
     store.close();
   });
 
@@ -168,14 +222,68 @@ describe("reconcileProjectPreviews", () => {
       idleMs: 600_000,
     });
 
+    // The wake start is queued without blocking reconciliation, so the
+    // running row only appears once the boot settles.
+    await vi.waitFor(() =>
+      expect(store.getProjectPreview(projectId)).toMatchObject({
+        status: "running",
+        port: 4200,
+      }),
+    );
     expect(provider.starts).toEqual([projectId]);
+    // With a threshold a second in the past the freshly-woken preview is
+    // neither wake-flagged nor idle, so nothing is left to reconcile.
+    expect(
+      store.listProjectPreviewsForReconcile(
+        new Date(Date.now() - 1_000).toISOString(),
+      ),
+    ).toEqual([]);
+    store.close();
+  });
+
+  it("wakes without blocking on slow boots and skips duplicate wake requests", async () => {
+    const store = new ControlPlaneStore(":memory:");
+    const projectId = seedProject(store);
+    store.setProjectPreview({ projectId, status: "stopped" });
+    store.requestProjectPreviewWake(projectId);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const provider = new FakePreviewProvider(0, () => gate);
+
+    // Reconcile returns immediately even though the boot is parked in the
+    // provider; a second pass (forced-idle so every running row would be
+    // reaped) must neither enqueue a duplicate start nor stop the row the
+    // in-flight start just wrote.
+    await reconcileProjectPreviews({
+      store,
+      previewProvider: provider,
+      workspaceRoot: "/tmp/workspaces",
+      idleMs: 600_000,
+    });
+    await reconcileProjectPreviews({
+      store,
+      previewProvider: provider,
+      workspaceRoot: "/tmp/workspaces",
+      idleMs: -1_000,
+    });
+
+    expect(isProjectPreviewStarting(projectId)).toBe(true);
+    expect(store.getProjectPreview(projectId)).toMatchObject({
+      status: "starting",
+    });
+
+    release();
+    await vi.waitFor(() =>
+      expect(isProjectPreviewStarting(projectId)).toBe(false),
+    );
+    expect(provider.starts).toEqual([projectId]);
+    expect(provider.stops).toEqual([]);
     expect(store.getProjectPreview(projectId)).toMatchObject({
       status: "running",
       port: 4200,
     });
-    expect(
-      store.listProjectPreviewsForReconcile(new Date().toISOString()),
-    ).toEqual([]);
     store.close();
   });
 
@@ -193,8 +301,10 @@ describe("reconcileProjectPreviews", () => {
       idleMs: 600_000,
     });
 
+    await vi.waitFor(() =>
+      expect(store.getProjectPreview(projectId)?.status).toBe("running"),
+    );
     expect(provider.starts).toEqual([projectId]);
-    expect(store.getProjectPreview(projectId)?.status).toBe("running");
     store.close();
   });
 });

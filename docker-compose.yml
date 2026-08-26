@@ -6,6 +6,9 @@ services:
     restart: unless-stopped
     # init: reap the detached preview/build child process trees.
     init: true
+    # Keep a 2C2G host usable when a build/dev server eats memory: the OOM
+    # killer lands inside this container instead of on sshd/Docker itself.
+    mem_limit: 1600m
     env_file: .env
     environment:
       PORT: "3000"
@@ -37,6 +40,7 @@ services:
       context: .
       target: web
     restart: unless-stopped
+    mem_limit: 192m
     depends_on:
       atoms:
         condition: service_healthy

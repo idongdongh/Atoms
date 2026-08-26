@@ -50,7 +50,7 @@
 | 项目创建 + 模板 + Git 版本链      | ✅   | react-vite 模板、初始提交、每轮自动 commit、版本列表与回滚                                                       |
 | Agent 主链（结构化工具 + 事件流） | ✅   | 7 工具 Zod 双端校验、SSE 实时事件、失败自动 discard                                                              |
 | 模型接入                          | ✅   | OpenAI 兼容（DeepSeek 已配置就绪）+ 离线 demo 模型；120s 超时                                                    |
-| 预览网关 + 生命周期               | ✅   | dev server 子进程、跨源/网关两种模式、启动重试、空闲回收、打开即唤醒、不可达自愈                                 |
+| 预览网关 + 生命周期               | ✅   | dev server 子进程、跨源/网关两种模式、启动重试、空闲回收、打开即唤醒（公网 `/p/` 只读，不能触发重启）            |
 | 发布与回退                        | ✅   | 受控构建、不可变 release、激活指针、公网 URL、秒级回退                                                           |
 | 前端体验                          | ✅   | Dyad 式双状态流（主页 → 分栏工作台）、面板展开收起、Manus 暖纸主题                                               |
 | 部署产物                          | ✅   | Dockerfile（多阶段）+ compose + Caddy（自动 HTTPS、SSE 不缓冲）+ `.env.example` + [部署手册](docs/deployment.md) |

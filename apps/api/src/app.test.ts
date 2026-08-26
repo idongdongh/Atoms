@@ -412,4 +412,49 @@ describe("Control Plane API", () => {
       store.close();
     }
   });
+
+  it("only the authenticated proxy flags a wake when upstream dies", async () => {
+    const { app, root, session, project } = await fixture();
+    const store = new ControlPlaneStore(
+      path.join(root, "control-plane.sqlite"),
+    );
+    try {
+      // Port 1 has no listener: every proxied request hits the upstream
+      // error path while the row still claims "running".
+      store.setProjectPreview({
+        projectId: project.id,
+        status: "running",
+        url: "http://127.0.0.1:1/",
+        port: 1,
+      });
+
+      const publicHit = await app.inject({
+        method: "GET",
+        url: `/p/${project.id}/`,
+      });
+      expect(publicHit.statusCode).toBe(502);
+      // A past idle cut means the row is only selected when a wake flag is
+      // set: the public route must not have requested one.
+      const dawnOfTime = "1970-01-01T00:00:00.001Z";
+      expect(
+        store
+          .listProjectPreviewsForReconcile(dawnOfTime)
+          .some((record) => record.project_id === project.id),
+      ).toBe(false);
+
+      const ownedHit = await app.inject({
+        method: "GET",
+        url: `/projects/${project.id}/preview/proxy/`,
+        cookies: session,
+      });
+      expect(ownedHit.statusCode).toBe(502);
+      expect(
+        store
+          .listProjectPreviewsForReconcile(dawnOfTime)
+          .some((record) => record.project_id === project.id),
+      ).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
 });

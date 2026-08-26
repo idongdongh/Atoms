@@ -489,6 +489,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
     reply: FastifyReply,
     projectId: string,
     routePrefix: string,
+    options: { wakeOnUpstreamFailure?: boolean } = {},
   ): void => {
     const preview = store.getProjectPreview(projectId);
     if (!preview || preview.status !== "running" || !preview.port) {
@@ -549,8 +550,12 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
     );
     upstream.on("error", () => {
       // The dev server died without updating its row (e.g. an OOM kill).
-      // Flag a wake so the worker reconciles the stale "running" state.
-      store.requestProjectPreviewWake(projectId);
+      // Only the authenticated proxy flags a wake: the public /p/ route is
+      // unauthenticated, and letting it trigger restarts would hand the
+      // internet a forced-reboot primitive against this host.
+      if (options.wakeOnUpstreamFailure) {
+        store.requestProjectPreviewWake(projectId);
+      }
       if (!reply.raw.headersSent) {
         reply.raw.writeHead(502, { "content-type": "text/plain" });
       }
@@ -570,6 +575,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
         reply,
         request.params.projectId,
         `/projects/${request.params.projectId}/preview/proxy`,
+        { wakeOnUpstreamFailure: true },
       );
     },
   );

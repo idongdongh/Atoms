@@ -20,8 +20,41 @@ export type StartProjectPreviewInput = {
  * outcome into the control-plane store. Transient dev-server failures (port
  * races, one-off install hiccups) are common, so exactly one automatic retry
  * is attempted before the preview is marked failed.
+ *
+ * Starts for the same project are serialized through a queue: concurrent
+ * callers (an agent run finishing while reconciliation wakes the same
+ * preview) would otherwise race stop-then-start and the slower loser could
+ * overwrite the store with a stale failed/running row. The returned promise
+ * never rejects — callers fire-and-forget it.
  */
-export async function startProjectPreview(
+const startQueues = new Map<string, Promise<void>>();
+
+export function isProjectPreviewStarting(projectId: string): boolean {
+  return startQueues.has(projectId);
+}
+
+export function startProjectPreview(
+  input: StartProjectPreviewInput,
+): Promise<void> {
+  const previous = startQueues.get(input.projectId) ?? Promise.resolve();
+  const chained = previous
+    .then(() => startProjectPreviewExclusive(input))
+    .catch((error: unknown) => {
+      // Only store writes can reach here; provider failures are already
+      // mirrored as a failed preview row. Swallow so fire-and-forget
+      // callers never trip an unhandled rejection.
+      console.error("Preview start failed", error);
+    });
+  startQueues.set(input.projectId, chained);
+  void chained.finally(() => {
+    if (startQueues.get(input.projectId) === chained) {
+      startQueues.delete(input.projectId);
+    }
+  });
+  return chained;
+}
+
+async function startProjectPreviewExclusive(
   input: StartProjectPreviewInput,
 ): Promise<void> {
   const { store, previewProvider, projectId, workspaceRoot, emit } = input;
@@ -84,12 +117,17 @@ export async function reconcileProjectPreviews(input: {
   for (const record of previews) {
     if (record.wake_requested_at) {
       input.store.clearProjectPreviewWake(record.project_id);
-      await startProjectPreview({
-        store: input.store,
-        previewProvider: input.previewProvider,
-        projectId: record.project_id,
-        workspaceRoot: path.join(input.workspaceRoot, record.project_id),
-      });
+      // Enqueue without awaiting: a dev-server boot (install + vite) can
+      // take a minute or more, and blocking this loop would also delay the
+      // worker from claiming queued agent runs.
+      if (!isProjectPreviewStarting(record.project_id)) {
+        void startProjectPreview({
+          store: input.store,
+          previewProvider: input.previewProvider,
+          projectId: record.project_id,
+          workspaceRoot: path.join(input.workspaceRoot, record.project_id),
+        });
+      }
       continue;
     }
     if (input.store.hasActiveRun(record.project_id)) continue;
