@@ -1,4 +1,9 @@
-import { randomUUID } from "node:crypto";
+import {
+  randomBytes,
+  randomUUID,
+  scryptSync,
+  timingSafeEqual,
+} from "node:crypto";
 import http from "node:http";
 import { cp, lstat, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import path from "node:path";
@@ -6,9 +11,14 @@ import {
   agentRunStatusSchema,
   createProjectInputSchema,
   createRunInputSchema,
+  loginInputSchema,
+  registerInputSchema,
   restoreProjectInputSchema,
+  type AgentRun,
+  type Project,
   type ProjectPublication,
   type ProjectPreview,
+  type User,
 } from "@atoms/contracts";
 import { ControlPlaneStore } from "@atoms/db";
 import type { BuildProvider } from "@atoms/sandbox-sdk";
@@ -76,6 +86,38 @@ function notFound(reply: { code(statusCode: number): unknown }) {
   return { error: "not_found", message: "Project was not found" };
 }
 
+const sessionCookieName = "atoms_session";
+const sessionMaxAgeSeconds = 7 * 24 * 60 * 60;
+
+function readSessionToken(request: FastifyRequest): string | null {
+  const header = request.headers.cookie;
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator === -1) continue;
+    if (part.slice(0, separator).trim() === sessionCookieName) {
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    }
+  }
+  return null;
+}
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const derived = scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${derived}`;
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+  const [salt, digest] = stored.split(":");
+  if (!salt || !digest) return false;
+  const derived = scryptSync(password, salt, 64);
+  const expected = Buffer.from(digest, "hex");
+  return (
+    derived.length === expected.length && timingSafeEqual(derived, expected)
+  );
+}
+
 function isTerminalRun(status: string): boolean {
   const parsed = agentRunStatusSchema.parse(status);
   return (
@@ -97,8 +139,83 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   const store = new ControlPlaneStore(
     options.databasePath ?? path.resolve(".atoms-data/control-plane.sqlite"),
   );
-  const userId = store.ensureDevelopmentUser();
   const app = Fastify({ logger: options.logger ?? true, trustProxy: true });
+
+  const requestUsers = new WeakMap<FastifyRequest, User>();
+  const currentUser = (request: FastifyRequest): User | undefined =>
+    requestUsers.get(request);
+
+  const findOwnedProject = (
+    request: FastifyRequest,
+    projectId: string,
+  ): Project | null => {
+    try {
+      const project = store.getProject(projectId);
+      return project.userId === currentUser(request)?.id ? project : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const findOwnedRun = (
+    request: FastifyRequest,
+    runId: string,
+  ): AgentRun | null => {
+    try {
+      const run = store.getRun(runId);
+      const project = store.getProject(run.projectId);
+      return project.userId === currentUser(request)?.id ? run : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const findOwnedChat = (
+    request: FastifyRequest,
+    chatId: string,
+  ): string | null => {
+    try {
+      const projectId = store.getProjectIdForChat(chatId);
+      return findOwnedProject(request, projectId) ? projectId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  app.addHook("onRequest", async (request, reply) => {
+    const token = readSessionToken(request);
+    if (token) {
+      const user = store.getSessionUser(token);
+      if (user) requestUsers.set(request, user);
+    }
+    const path = (request.url.split("?")[0] ?? request.url) as string;
+    const isPublicPath =
+      path === "/health" ||
+      path.startsWith("/auth/") ||
+      path.startsWith("/published/");
+    if (!isPublicPath && !requestUsers.has(request)) {
+      reply.code(401);
+      return reply.send({
+        error: "unauthorized",
+        message: "Sign in to continue",
+      });
+    }
+    // Published apps share the builder origin, so mutating requests require
+    // an explicit client header: generated code cannot drive the control
+    // plane with the visitor's session cookie.
+    const isMutating = request.method !== "GET" && request.method !== "HEAD";
+    if (
+      isMutating &&
+      !path.startsWith("/auth/") &&
+      request.headers["x-atoms-client"] !== "web"
+    ) {
+      reply.code(403);
+      return reply.send({
+        error: "missing_client_header",
+        message: "Mutating requests must carry the x-atoms-client header",
+      });
+    }
+  });
 
   app.addHook("onClose", async () => store.close());
   app.setErrorHandler((error, _request, reply) => {
@@ -118,7 +235,100 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
 
   app.get("/health", async () => ({ service: "api", status: "ok" }));
 
-  app.get("/projects", async () => ({ projects: store.listProjects(userId) }));
+  app.post("/auth/register", async (request, reply) => {
+    const input = registerInputSchema.safeParse(request.body);
+    if (!input.success) {
+      reply.code(400);
+      return {
+        error: "invalid_request",
+        message: "名称、邮箱或密码不合法（密码至少 8 位）",
+      };
+    }
+    if (store.getUserByEmail(input.data.email)) {
+      reply.code(409);
+      return { error: "email_taken", message: "该邮箱已注册" };
+    }
+    const user = store.createUser({
+      id: randomUUID(),
+      email: input.data.email,
+      name: input.data.name,
+      passwordHash: hashPassword(input.data.password),
+    });
+    const token = randomBytes(32).toString("hex");
+    store.createSession({
+      token,
+      userId: user.id,
+      expiresAt: new Date(
+        Date.now() + sessionMaxAgeSeconds * 1000,
+      ).toISOString(),
+    });
+    reply.header(
+      "set-cookie",
+      `${sessionCookieName}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${sessionMaxAgeSeconds}`,
+    );
+    reply.code(201);
+    return { user };
+  });
+
+  app.post("/auth/login", async (request, reply) => {
+    const input = loginInputSchema.safeParse(request.body);
+    if (!input.success) {
+      reply.code(400);
+      return { error: "invalid_request", message: "邮箱或密码不合法" };
+    }
+    const record = store.getUserByEmail(input.data.email);
+    if (
+      !record ||
+      !record.passwordHash ||
+      !verifyPassword(input.data.password, record.passwordHash)
+    ) {
+      reply.code(401);
+      return { error: "invalid_credentials", message: "邮箱或密码不正确" };
+    }
+    const token = randomBytes(32).toString("hex");
+    store.createSession({
+      token,
+      userId: record.id,
+      expiresAt: new Date(
+        Date.now() + sessionMaxAgeSeconds * 1000,
+      ).toISOString(),
+    });
+    reply.header(
+      "set-cookie",
+      `${sessionCookieName}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${sessionMaxAgeSeconds}`,
+    );
+    return {
+      user: {
+        id: record.id,
+        email: record.email,
+        name: record.name,
+        createdAt: record.createdAt,
+      },
+    };
+  });
+
+  app.post("/auth/logout", async (request, reply) => {
+    const token = readSessionToken(request);
+    if (token) store.deleteSession(token);
+    reply.header(
+      "set-cookie",
+      `${sessionCookieName}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`,
+    );
+    return { ok: true };
+  });
+
+  app.get("/auth/me", async (request, reply) => {
+    const user = currentUser(request);
+    if (!user) {
+      reply.code(401);
+      return { error: "unauthorized", message: "Not signed in" };
+    }
+    return { user };
+  });
+
+  app.get("/projects", async (request) => ({
+    projects: store.listProjects(currentUser(request)!.id),
+  }));
 
   app.post("/projects", async (request, reply) => {
     const input = createProjectInputSchema.safeParse(request.body);
@@ -140,7 +350,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       });
       const project = store.createProject({
         id: projectId,
-        userId,
+        userId: currentUser(request)!.id,
         name: input.data.name,
         slug: slugify(input.data.name, projectId),
         templateId: "react-vite",
@@ -160,28 +370,22 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId",
     async (request, reply) => {
-      try {
-        return { project: store.getProject(request.params.projectId) };
-      } catch {
-        return notFound(reply);
-      }
+      const project = findOwnedProject(request, request.params.projectId);
+      if (!project) return notFound(reply);
+      return { project };
     },
   );
 
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/files",
     async (request, reply) => {
-      try {
-        store.getProject(request.params.projectId);
-        const workspace = await LocalGitWorkspace.open(
-          path.join(dataRoot, request.params.projectId),
-        );
-        return { files: await workspace.listFiles() };
-      } catch (error) {
-        if ((error as Error).message === "Project not found")
-          return notFound(reply);
-        throw error;
+      if (!findOwnedProject(request, request.params.projectId)) {
+        return notFound(reply);
       }
+      const workspace = await LocalGitWorkspace.open(
+        path.join(dataRoot, request.params.projectId),
+      );
+      return { files: await workspace.listFiles() };
     },
   );
 
@@ -193,17 +397,13 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       reply.code(400);
       return { error: "invalid_request", message: "File path is required" };
     }
-    try {
-      store.getProject(request.params.projectId);
-      const workspace = await LocalGitWorkspace.open(
-        path.join(dataRoot, request.params.projectId),
-      );
-      return { file: await workspace.readFile(request.query.path) };
-    } catch (error) {
-      if ((error as Error).message === "Project not found")
-        return notFound(reply);
-      throw error;
+    if (!findOwnedProject(request, request.params.projectId)) {
+      return notFound(reply);
     }
+    const workspace = await LocalGitWorkspace.open(
+      path.join(dataRoot, request.params.projectId),
+    );
+    return { file: await workspace.readFile(request.query.path) };
   });
 
   app.get<{
@@ -214,41 +414,33 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       reply.code(400);
       return { error: "invalid_request", message: "Search query is required" };
     }
-    try {
-      store.getProject(request.params.projectId);
-      const workspace = await LocalGitWorkspace.open(
-        path.join(dataRoot, request.params.projectId),
-      );
-      return { matches: await workspace.searchFiles(request.query.q) };
-    } catch (error) {
-      if ((error as Error).message === "Project not found")
-        return notFound(reply);
-      throw error;
+    if (!findOwnedProject(request, request.params.projectId)) {
+      return notFound(reply);
     }
+    const workspace = await LocalGitWorkspace.open(
+      path.join(dataRoot, request.params.projectId),
+    );
+    return { matches: await workspace.searchFiles(request.query.q) };
   });
 
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/versions",
     async (request, reply) => {
-      try {
-        store.getProject(request.params.projectId);
-        return { versions: store.listVersions(request.params.projectId) };
-      } catch {
+      if (!findOwnedProject(request, request.params.projectId)) {
         return notFound(reply);
       }
+      return { versions: store.listVersions(request.params.projectId) };
     },
   );
 
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/preview",
     async (request, reply) => {
-      let preview: ProjectPreview | null;
-      try {
-        store.getProject(request.params.projectId);
-        preview = store.getProjectPreview(request.params.projectId);
-      } catch {
+      if (!findOwnedProject(request, request.params.projectId)) {
         return notFound(reply);
       }
+      let preview: ProjectPreview | null;
+      preview = store.getProjectPreview(request.params.projectId);
       // The preview child only listens on 127.0.0.1; the browser-facing URL
       // is the API proxy route, derived from the requesting host.
       const publicUrl =
@@ -266,9 +458,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/preview/proxy/*",
     async (request, reply) => {
-      try {
-        store.getProject(request.params.projectId);
-      } catch {
+      if (!findOwnedProject(request, request.params.projectId)) {
         return notFound(reply);
       }
       const preview = store.getProjectPreview(request.params.projectId);
@@ -311,12 +501,8 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/releases",
     async (request, reply) => {
-      let project;
-      try {
-        project = store.getProject(request.params.projectId);
-      } catch {
-        return notFound(reply);
-      }
+      const project = findOwnedProject(request, request.params.projectId);
+      if (!project) return notFound(reply);
       const workspacePath = path.join(dataRoot, project.id);
       const release = store.createRelease({
         id: randomUUID(),
@@ -365,9 +551,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/releases",
     async (request, reply) => {
-      try {
-        store.getProject(request.params.projectId);
-      } catch {
+      if (!findOwnedProject(request, request.params.projectId)) {
         return notFound(reply);
       }
       const publication = store.getPublication(request.params.projectId);
@@ -383,12 +567,8 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   app.post<{ Params: { projectId: string; releaseId: string } }>(
     "/projects/:projectId/releases/:releaseId/activate",
     async (request, reply) => {
-      let project;
-      try {
-        project = store.getProject(request.params.projectId);
-      } catch {
-        return notFound(reply);
-      }
+      const project = findOwnedProject(request, request.params.projectId);
+      if (!project) return notFound(reply);
       let release;
       try {
         release = store.getRelease(request.params.releaseId);
@@ -488,12 +668,8 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
           message: "A valid commit hash is required",
         };
       }
-      let project;
-      try {
-        project = store.getProject(request.params.projectId);
-      } catch {
-        return notFound(reply);
-      }
+      const project = findOwnedProject(request, request.params.projectId);
+      if (!project) return notFound(reply);
       const workspacePath = path.join(dataRoot, project.id);
       const workspace = await LocalGitWorkspace.open(workspacePath);
       const commitHash = await new WorkspaceWriteLock(
@@ -517,24 +693,20 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   app.get<{ Params: { chatId: string } }>(
     "/chats/:chatId/messages",
     async (request, reply) => {
-      try {
-        store.getProjectIdForChat(request.params.chatId);
-        return { messages: store.listMessages(request.params.chatId) };
-      } catch {
+      if (!findOwnedChat(request, request.params.chatId)) {
         return notFound(reply);
       }
+      return { messages: store.listMessages(request.params.chatId) };
     },
   );
 
   app.get<{ Params: { chatId: string } }>(
     "/chats/:chatId/runs",
     async (request, reply) => {
-      try {
-        store.getProjectIdForChat(request.params.chatId);
-        return { runs: store.listRuns(request.params.chatId) };
-      } catch {
+      if (!findOwnedChat(request, request.params.chatId)) {
         return notFound(reply);
       }
+      return { runs: store.listRuns(request.params.chatId) };
     },
   );
 
@@ -549,12 +721,8 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
           message: "prompt and idempotencyKey are required",
         };
       }
-      let projectId: string;
-      try {
-        projectId = store.getProjectIdForChat(request.params.chatId);
-      } catch {
-        return notFound(reply);
-      }
+      const projectId = findOwnedChat(request, request.params.chatId);
+      if (!projectId) return notFound(reply);
       try {
         const run = store.createRun({
           id: randomUUID(),
@@ -582,81 +750,75 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   app.get<{ Params: { runId: string } }>(
     "/runs/:runId",
     async (request, reply) => {
-      try {
-        const run = store.getRun(request.params.runId);
-        return {
-          run,
-          messages: store.listMessages(run.chatId),
-          toolCalls: store.listToolCalls(run.id),
-        };
-      } catch {
+      const run = findOwnedRun(request, request.params.runId);
+      if (!run) {
         reply.code(404);
         return { error: "not_found", message: "Run was not found" };
       }
+      return {
+        run,
+        messages: store.listMessages(run.chatId),
+        toolCalls: store.listToolCalls(run.id),
+      };
     },
   );
 
   app.post<{ Params: { runId: string } }>(
     "/runs/:runId/cancel",
     async (request, reply) => {
-      try {
-        const run = store.getRun(request.params.runId);
-        if (!isTerminalRun(run.status)) {
-          try {
-            store.transitionRun(run.id, "cancelled");
-          } catch (error) {
-            reply.code(409);
-            return {
-              error: "run_not_cancellable",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "Run cannot be cancelled",
-            };
-          }
-          store.appendAgentEvent({ type: "run.cancelled", runId: run.id });
-        }
-        return { run: store.getRun(run.id) };
-      } catch {
+      const run = findOwnedRun(request, request.params.runId);
+      if (!run) {
         reply.code(404);
         return { error: "not_found", message: "Run was not found" };
       }
+      if (!isTerminalRun(run.status)) {
+        try {
+          store.transitionRun(run.id, "cancelled");
+        } catch (error) {
+          reply.code(409);
+          return {
+            error: "run_not_cancellable",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Run cannot be cancelled",
+          };
+        }
+        store.appendAgentEvent({ type: "run.cancelled", runId: run.id });
+      }
+      return { run: store.getRun(run.id) };
     },
   );
 
   app.post<{ Params: { runId: string } }>(
     "/runs/:runId/retry",
     async (request, reply) => {
-      try {
-        const run = store.getRun(request.params.runId);
-        if (run.status !== "failed" && run.status !== "cancelled") {
-          reply.code(409);
-          return {
-            error: "run_not_retryable",
-            message: "Only failed or cancelled runs can be retried",
-          };
-        }
-        const userMessage = store
-          .listMessages(run.chatId)
-          .find((message) => message.id === run.userMessageId);
-        if (!userMessage) throw new Error("User message for run was not found");
-        const retry = store.createRun({
-          id: randomUUID(),
-          projectId: run.projectId,
-          chatId: run.chatId,
-          prompt: userMessage.content,
-          idempotencyKey: `${run.id}:retry:${randomUUID()}`,
-          model: run.model ?? undefined,
-        });
-        reply.code(202);
-        return { run: retry };
-      } catch (error) {
-        if (error instanceof Error && error.message === "Run not found") {
-          reply.code(404);
-          return { error: "not_found", message: "Run was not found" };
-        }
-        throw error;
+      const run = findOwnedRun(request, request.params.runId);
+      if (!run) {
+        reply.code(404);
+        return { error: "not_found", message: "Run was not found" };
       }
+      if (run.status !== "failed" && run.status !== "cancelled") {
+        reply.code(409);
+        return {
+          error: "run_not_retryable",
+          message: "Only failed or cancelled runs can be retried",
+        };
+      }
+      const userMessage = store
+        .listMessages(run.chatId)
+        .find((message) => message.id === run.userMessageId);
+      if (!userMessage) throw new Error("User message for run was not found");
+      const retry = store.createRun({
+        id: randomUUID(),
+        projectId: run.projectId,
+        chatId: run.chatId,
+        prompt: userMessage.content,
+        idempotencyKey: `${run.id}:retry:${randomUUID()}`,
+        model: run.model ?? undefined,
+      });
+      reply.code(202);
+      return { run: retry };
     },
   );
 
@@ -664,6 +826,10 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
     Params: { runId: string };
     Querystring: { after?: string };
   }>("/runs/:runId/events", async (request, reply) => {
+    if (!findOwnedRun(request, request.params.runId)) {
+      reply.code(404);
+      return { error: "not_found", message: "Run was not found" };
+    }
     const after =
       request.query.after === undefined ? -1 : Number(request.query.after);
     if (!Number.isInteger(after) || after < -1) {
@@ -677,10 +843,8 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
     Params: { runId: string };
     Querystring: { after?: string };
   }>("/runs/:runId/events/stream", async (request, reply) => {
-    let run;
-    try {
-      run = store.getRun(request.params.runId);
-    } catch {
+    const run = findOwnedRun(request, request.params.runId);
+    if (!run) {
       reply.code(404);
       return { error: "not_found", message: "Run was not found" };
     }

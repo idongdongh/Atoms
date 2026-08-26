@@ -10,6 +10,7 @@ import type {
   ProjectPreview,
   ProjectRelease,
   ProjectVersion,
+  User,
 } from "@atoms/contracts";
 
 type PublicationView = ProjectPublication & { baseUrl: string | null };
@@ -17,7 +18,12 @@ type PublicationView = ProjectPublication & { baseUrl: string | null };
 type LoadState = "idle" | "loading" | "ready";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  const method = init?.method ?? "GET";
+  const headers = new Headers(init?.headers);
+  if (method !== "GET" && method !== "HEAD") {
+    headers.set("x-atoms-client", "web");
+  }
+  const response = await fetch(url, { ...init, method, headers });
   const body = (await response.json()) as T & { message?: string };
   if (!response.ok) throw new Error(body.message ?? "请求失败，请稍后重试");
   return body;
@@ -85,6 +91,12 @@ function eventLabel(event: AgentEvent): string {
 }
 
 export function App() {
+  const [authUser, setAuthUser] = useState<User | null | undefined>(undefined);
+  const [authMode, setAuthMode] = useState<"login" | "register">("register");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -108,6 +120,13 @@ export function App() {
     projects.find((project) => project.id === selectedId) ?? null;
 
   useEffect(() => {
+    void requestJson<{ user: User }>("/api/auth/me")
+      .then(({ user }) => setAuthUser(user))
+      .catch(() => setAuthUser(null));
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) return;
     void requestJson<{ projects: Project[] }>("/api/projects")
       .then(({ projects: loaded }) => {
         setProjects(loaded);
@@ -118,7 +137,7 @@ export function App() {
         setError(cause instanceof Error ? cause.message : "项目加载失败");
         setState("ready");
       });
-  }, []);
+  }, [authUser]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -408,6 +427,130 @@ export function App() {
     }
   }
 
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (authBusy) return;
+    setAuthBusy(true);
+    setError(null);
+    try {
+      const { user } = await requestJson<{ user: User }>(
+        authMode === "register" ? "/api/auth/register" : "/api/auth/login",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            authMode === "register"
+              ? { name: authName, email: authEmail, password: authPassword }
+              : { email: authEmail, password: authPassword },
+          ),
+        },
+      );
+      setAuthUser(user);
+      setAuthPassword("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "登录失败，请重试");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      await requestJson("/api/auth/logout", { method: "POST" });
+    } catch {
+      // signing out locally even if the request fails
+    }
+    setAuthUser(null);
+    setProjects([]);
+    setSelectedId(null);
+    setEvents([]);
+    setMessages([]);
+    setPreview(null);
+    setState("idle");
+  }
+
+  if (authUser === undefined) {
+    return (
+      <main className="app-shell">
+        <div className="welcome-state">
+          <p className="muted">正在检查登录状态…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <main className="app-shell">
+        <div className="welcome-state">
+          <p className="eyebrow">Atoms</p>
+          <h1>{authMode === "register" ? "创建账号开始构建" : "欢迎回来"}</h1>
+          <p>注册后即可创建项目，通过 Agent 生成应用并发布。</p>
+          <form className="project-form" onSubmit={submitAuth}>
+            {authMode === "register" && (
+              <>
+                <label htmlFor="auth-name">名称</label>
+                <input
+                  id="auth-name"
+                  value={authName}
+                  onChange={(event) => setAuthName(event.target.value)}
+                  maxLength={80}
+                  required
+                />
+              </>
+            )}
+            <label htmlFor="auth-email">邮箱</label>
+            <input
+              id="auth-email"
+              type="email"
+              value={authEmail}
+              onChange={(event) => setAuthEmail(event.target.value)}
+              required
+              autoComplete="email"
+            />
+            <label htmlFor="auth-password">密码</label>
+            <input
+              id="auth-password"
+              type="password"
+              value={authPassword}
+              onChange={(event) => setAuthPassword(event.target.value)}
+              minLength={authMode === "register" ? 8 : undefined}
+              required
+              autoComplete={
+                authMode === "register" ? "new-password" : "current-password"
+              }
+            />
+            {error && (
+              <p className="error-banner" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="agent-actions">
+              <button type="submit" disabled={authBusy}>
+                {authBusy
+                  ? "提交中…"
+                  : authMode === "register"
+                    ? "注册并开始"
+                    : "登录"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode(
+                    authMode === "register" ? "login" : "register",
+                  );
+                  setError(null);
+                }}
+              >
+                {authMode === "register" ? "已有账号？登录" : "没有账号？注册"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
   const running = activeRun && !terminalStatuses.has(activeRun.status);
   return (
     <main className="app-shell">
@@ -419,7 +562,10 @@ export function App() {
           <span>Atoms</span>
         </a>
         <span className="environment">
-          Local development · structured Agent
+          {authUser.email} ·{" "}
+          <button type="button" onClick={() => void logout()}>
+            退出
+          </button>
         </span>
       </header>
       <div className="workbench" id="workspace">

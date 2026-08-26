@@ -12,6 +12,7 @@ import {
   projectReleaseSchema,
   projectVersionSchema,
   toolCallSchema,
+  userSchema,
   canTransitionAgentRun,
   type AgentEvent,
   type AgentRun,
@@ -23,6 +24,7 @@ import {
   type ProjectVersion,
   type AgentRunStatus,
   type ToolCall,
+  type User,
 } from "@atoms/contracts";
 
 type ProjectRecord = {
@@ -38,6 +40,30 @@ type ProjectRecord = {
   created_at: string;
   updated_at: string;
 };
+
+type UserRecord = {
+  id: string;
+  email: string;
+  name: string;
+  password_hash: string | null;
+  created_at: string;
+};
+
+type SessionRecord = {
+  token: string;
+  user_id: string;
+  created_at: string;
+  expires_at: string;
+};
+
+function mapUser(record: UserRecord): User {
+  return userSchema.parse({
+    id: record.id,
+    email: record.email,
+    name: record.name,
+    createdAt: record.created_at,
+  });
+}
 
 type VersionRecord = {
   id: string;
@@ -358,7 +384,83 @@ export class ControlPlaneStore {
         current_release_id TEXT REFERENCES project_releases(id) ON DELETE SET NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS sessions (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
     `);
+    // Databases created before password support lack the password column.
+    try {
+      this.#database.exec("ALTER TABLE users ADD COLUMN password_hash TEXT");
+    } catch {
+      // Column already exists.
+    }
+  }
+
+  createUser(input: {
+    id: string;
+    email: string;
+    name: string;
+    passwordHash: string;
+  }): User {
+    this.#database
+      .prepare(
+        "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(
+        input.id,
+        input.email,
+        input.name,
+        input.passwordHash,
+        new Date().toISOString(),
+      );
+    return this.getUserById(input.id);
+  }
+
+  getUserById(userId: string): User {
+    const record = this.#database
+      .prepare("SELECT * FROM users WHERE id = ?")
+      .get(userId) as UserRecord | undefined;
+    if (!record) throw new Error("User not found");
+    return mapUser(record);
+  }
+
+  getUserByEmail(email: string): (User & { passwordHash: string }) | null {
+    const record = this.#database
+      .prepare("SELECT * FROM users WHERE email = ?")
+      .get(email) as UserRecord | undefined;
+    if (!record) return null;
+    return { ...mapUser(record), passwordHash: record.password_hash ?? "" };
+  }
+
+  createSession(input: {
+    token: string;
+    userId: string;
+    expiresAt: string;
+  }): void {
+    const createdAt = new Date().toISOString();
+    this.#database
+      .prepare(
+        "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(input.token, input.userId, createdAt, input.expiresAt);
+  }
+
+  getSessionUser(token: string): User | null {
+    const record = this.#database
+      .prepare(
+        `SELECT users.* FROM sessions
+         JOIN users ON users.id = sessions.user_id
+         WHERE sessions.token = ? AND sessions.expires_at > ?`,
+      )
+      .get(token, new Date().toISOString()) as UserRecord | undefined;
+    return record ? mapUser(record) : null;
+  }
+
+  deleteSession(token: string): void {
+    this.#database.prepare("DELETE FROM sessions WHERE token = ?").run(token);
   }
 
   ensureDevelopmentUser(): string {
