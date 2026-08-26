@@ -1031,7 +1031,7 @@ export class ControlPlaneStore {
         "UPDATE project_previews SET status = 'stopped', url = NULL, port = NULL WHERE status = 'running'",
       )
       .run();
-    return result.changes;
+    return Number(result.changes);
   }
 
   createRelease(input: {
