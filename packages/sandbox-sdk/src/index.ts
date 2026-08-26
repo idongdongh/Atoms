@@ -6,6 +6,8 @@ export type {
   PreviewProcess,
   PreviewProvider,
 } from "./local-development-provider.js";
+export { LocalViteBuildProvider } from "./project-builder.js";
+export type { BuildProvider } from "./project-builder.js";
 
 function snapshot(sandbox: SandboxInfo): SandboxInfo {
   return { ...sandbox };

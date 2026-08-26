@@ -6,9 +6,13 @@ import type {
   FileContent,
   FileEntry,
   Project,
+  ProjectPublication,
   ProjectPreview,
+  ProjectRelease,
   ProjectVersion,
 } from "@atoms/contracts";
+
+type PublicationView = ProjectPublication & { baseUrl: string | null };
 
 type LoadState = "idle" | "loading" | "ready";
 
@@ -88,6 +92,9 @@ export function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [preview, setPreview] = useState<ProjectPreview | null>(null);
+  const [releases, setReleases] = useState<ProjectRelease[]>([]);
+  const [publication, setPublication] = useState<PublicationView | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [activeFile, setActiveFile] = useState<FileContent | null>(null);
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
   const [name, setName] = useState("");
@@ -119,6 +126,8 @@ export function App() {
       setVersions([]);
       setMessages([]);
       setPreview(null);
+      setReleases([]);
+      setPublication(null);
       setActiveFile(null);
       setActiveRun(null);
       return;
@@ -140,6 +149,10 @@ export function App() {
         `/api/chats/${project.chatId}/messages`,
       ),
       requestJson<{ runs: AgentRun[] }>(`/api/chats/${project.chatId}/runs`),
+      requestJson<{
+        releases: ProjectRelease[];
+        publication: PublicationView | null;
+      }>(`/api/projects/${selectedId}/releases`),
     ])
       .then(
         ([
@@ -148,11 +161,14 @@ export function App() {
           previewResult,
           messageResult,
           runResult,
+          releaseResult,
         ]) => {
           setFiles(fileResult.files);
           setVersions(versionResult.versions);
           setPreview(previewResult.preview);
           setMessages(messageResult.messages);
+          setReleases(releaseResult.releases);
+          setPublication(releaseResult.publication);
           setActiveRun(
             runResult.runs.find((run) => !terminalStatuses.has(run.status)) ??
               null,
@@ -350,6 +366,48 @@ export function App() {
     }
   }
 
+  async function publishProject() {
+    if (!selected || publishing) return;
+    setPublishing(true);
+    setError(null);
+    try {
+      const result = await requestJson<{
+        release: ProjectRelease;
+        publication: PublicationView;
+      }>(`/api/projects/${selected.id}/releases`, { method: "POST" });
+      setReleases((current) => [result.release, ...current]);
+      setPublication(result.publication);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "发布失败");
+      try {
+        const refreshed = await requestJson<{
+          releases: ProjectRelease[];
+          publication: PublicationView | null;
+        }>(`/api/projects/${selected.id}/releases`);
+        setReleases(refreshed.releases);
+        setPublication(refreshed.publication);
+      } catch {
+        // keep the inline error above
+      }
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function activateRelease(release: ProjectRelease) {
+    if (!selected || release.id === publication?.currentReleaseId) return;
+    try {
+      const result = await requestJson<{ publication: PublicationView }>(
+        `/api/projects/${selected.id}/releases/${release.id}/activate`,
+        { method: "POST" },
+      );
+      setPublication(result.publication);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "切换版本失败");
+    }
+  }
+
   const running = activeRun && !terminalStatuses.has(activeRun.status);
   return (
     <main className="app-shell">
@@ -528,6 +586,55 @@ export function App() {
               </p>
             </div>
           )}
+          <section className="activity" aria-label="发布">
+            <div className="panel-title">发布</div>
+            <div className="activity-list">
+              <div className="message-item">
+                <span>Public URL</span>
+                {publication?.baseUrl ? (
+                  <p>
+                    <a href={publication.baseUrl} target="_blank" rel="noreferrer">
+                      {publication.baseUrl}
+                    </a>
+                  </p>
+                ) : (
+                  <p>尚未发布。发布后应用可通过公网链接访问。</p>
+                )}
+              </div>
+              <div className="agent-actions">
+                <button
+                  type="button"
+                  disabled={!selected || publishing || !!running}
+                  onClick={() => void publishProject()}
+                >
+                  {publishing ? "构建中…" : "发布当前版本"}
+                </button>
+              </div>
+              {releases.length > 0 && (
+                <div className="message-item">
+                  <span>Releases</span>
+                  {releases.slice(0, 4).map((release) => (
+                    <button
+                      key={release.id}
+                      type="button"
+                      disabled={
+                        release.status !== "ready" ||
+                        release.id === publication?.currentReleaseId
+                      }
+                      onClick={() => void activateRelease(release)}
+                      title={release.errorMessage ?? release.commitHash}
+                    >
+                      {release.createdAt.slice(0, 19).replace("T", " ")} ·{" "}
+                      {release.status}
+                      {release.id === publication?.currentReleaseId
+                        ? " · 当前"
+                        : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
           <section className="activity" aria-label="Agent 活动">
             <div className="panel-title">Agent activity</div>
             <div className="activity-list">

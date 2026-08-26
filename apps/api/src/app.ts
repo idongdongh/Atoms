@@ -1,28 +1,65 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
-import { rm } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import {
   agentRunStatusSchema,
   createProjectInputSchema,
   createRunInputSchema,
   restoreProjectInputSchema,
+  type ProjectPublication,
   type ProjectPreview,
 } from "@atoms/contracts";
 import { ControlPlaneStore } from "@atoms/db";
+import type { BuildProvider } from "@atoms/sandbox-sdk";
+import { LocalViteBuildProvider } from "@atoms/sandbox-sdk";
 import {
   createProjectWorkspace,
   LocalGitWorkspace,
   WorkspaceWriteLock,
 } from "@atoms/workspace-sdk";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyRequest,
+} from "fastify";
 
 export type AppOptions = {
   databasePath?: string | undefined;
   workspaceRoot?: string | undefined;
   templateRoot?: string | undefined;
+  releasesRoot?: string | undefined;
+  buildProvider?: BuildProvider | undefined;
   logger?: boolean | undefined;
 };
+
+const staticContentTypes: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".txt": "text/plain; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+};
+
+function publicationView(
+  request: FastifyRequest,
+  publication: ProjectPublication,
+): ProjectPublication & { baseUrl: string } {
+  const host = request.headers.host ?? request.hostname;
+  return {
+    ...publication,
+    baseUrl: `${request.protocol}://${host}/published/${publication.projectId}/`,
+  };
+}
 
 function slugify(name: string, id: string): string {
   const base = name
@@ -53,6 +90,10 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
   const templateRoot = path.resolve(
     options.templateRoot ?? "templates/react-vite",
   );
+  const releasesRoot = path.resolve(
+    options.releasesRoot ?? ".atoms-data/published",
+  );
+  const buildProvider = options.buildProvider ?? new LocalViteBuildProvider();
   const store = new ControlPlaneStore(
     options.databasePath ?? path.resolve(".atoms-data/control-plane.sqlite"),
   );
@@ -264,6 +305,175 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
         reply.raw.end("Preview upstream is unreachable");
       });
       request.raw.pipe(upstream);
+    },
+  );
+
+  app.post<{ Params: { projectId: string } }>(
+    "/projects/:projectId/releases",
+    async (request, reply) => {
+      let project;
+      try {
+        project = store.getProject(request.params.projectId);
+      } catch {
+        return notFound(reply);
+      }
+      const workspacePath = path.join(dataRoot, project.id);
+      const release = store.createRelease({
+        id: randomUUID(),
+        projectId: project.id,
+        commitHash: project.currentCommit,
+      });
+      try {
+        const { distPath } = await new WorkspaceWriteLock(
+          workspacePath,
+        ).runExclusive(`release-${release.id}`, () =>
+          buildProvider.build({
+            projectId: project.id,
+            workspaceRoot: workspacePath,
+          }),
+        );
+        const releaseDir = path.join(releasesRoot, project.id, release.id);
+        await mkdir(releaseDir, { recursive: true });
+        await cp(distPath, releaseDir, { recursive: true });
+        store.completeRelease(release.id, { status: "ready" });
+        const publication = store.setPublication({
+          projectId: project.id,
+          releaseId: release.id,
+        });
+        reply.code(201);
+        return {
+          release: store.getRelease(release.id),
+          publication: publicationView(request, publication),
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        store.completeRelease(release.id, {
+          status: "failed",
+          errorMessage: message.slice(0, 500) || "Build failed",
+        });
+        reply.code(502);
+        return {
+          error: "release_failed",
+          message,
+          release: store.getRelease(release.id),
+        };
+      }
+    },
+  );
+
+  app.get<{ Params: { projectId: string } }>(
+    "/projects/:projectId/releases",
+    async (request, reply) => {
+      try {
+        store.getProject(request.params.projectId);
+      } catch {
+        return notFound(reply);
+      }
+      const publication = store.getPublication(request.params.projectId);
+      return {
+        releases: store.listReleases(request.params.projectId),
+        publication: publication
+          ? publicationView(request, publication)
+          : null,
+      };
+    },
+  );
+
+  app.post<{ Params: { projectId: string; releaseId: string } }>(
+    "/projects/:projectId/releases/:releaseId/activate",
+    async (request, reply) => {
+      let project;
+      try {
+        project = store.getProject(request.params.projectId);
+      } catch {
+        return notFound(reply);
+      }
+      let release;
+      try {
+        release = store.getRelease(request.params.releaseId);
+      } catch {
+        reply.code(404);
+        return { error: "not_found", message: "Release was not found" };
+      }
+      if (release.projectId !== project.id) {
+        reply.code(404);
+        return { error: "not_found", message: "Release was not found" };
+      }
+      if (release.status !== "ready") {
+        reply.code(409);
+        return {
+          error: "release_not_ready",
+          message: "Only ready releases can be activated",
+        };
+      }
+      const publication = store.setPublication({
+        projectId: project.id,
+        releaseId: release.id,
+      });
+      return { publication: publicationView(request, publication) };
+    },
+  );
+
+  app.get<{ Params: { projectId: string } }>(
+    "/published/:projectId/*",
+    async (request, reply) => {
+      let publication: ProjectPublication | null;
+      try {
+        store.getProject(request.params.projectId);
+        publication = store.getPublication(request.params.projectId);
+      } catch {
+        return notFound(reply);
+      }
+      if (!publication?.currentReleaseId) return notFound(reply);
+      let root: string;
+      try {
+        root = await realpath(
+          path.join(
+            releasesRoot,
+            request.params.projectId,
+            publication.currentReleaseId,
+          ),
+        );
+      } catch {
+        return notFound(reply);
+      }
+      const wildcard =
+        (request.params as Record<string, string | undefined>)["*"] ?? "";
+      let requested: string;
+      try {
+        const normalized = wildcard.startsWith("/") ? wildcard : `/${wildcard}`;
+        requested = decodeURIComponent(normalized).split("?")[0] ?? "/";
+      } catch {
+        reply.code(400);
+        return { error: "invalid_request", message: "Invalid path encoding" };
+      }
+      if (requested.endsWith("/")) requested += "index.html";
+      const target = path.resolve(root, `.${requested}`);
+      if (!target.startsWith(`${root}${path.sep}`)) return notFound(reply);
+      let stats;
+      try {
+        stats = await lstat(target);
+      } catch {
+        return notFound(reply);
+      }
+      if (stats.isSymbolicLink()) return notFound(reply);
+      if (stats.isDirectory()) {
+        return notFound(reply);
+      }
+      if (!stats.isFile()) return notFound(reply);
+      const body = await readFile(target);
+      const contentType =
+        staticContentTypes[path.extname(target).toLowerCase()] ??
+        "application/octet-stream";
+      reply.header("content-type", contentType);
+      reply.header(
+        "cache-control",
+        target.includes(`${path.sep}assets${path.sep}`)
+          ? "public, max-age=31536000, immutable"
+          : "no-cache",
+      );
+      return body;
     },
   );
 

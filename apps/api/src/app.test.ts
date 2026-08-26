@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { BuildProvider } from "@atoms/sandbox-sdk";
 import { createApp } from "./app.js";
 
 const apps: ReturnType<typeof createApp>[] = [];
@@ -10,7 +11,13 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-async function fixture() {
+async function fixture(
+  buildProvider?: BuildProvider,
+): Promise<{
+  app: ReturnType<typeof createApp>;
+  root: string;
+  project: { id: string; chatId: string; currentCommit: string };
+}> {
   const root = await mkdtemp(path.join(os.tmpdir(), "atoms-api-test-"));
   const templateRoot = path.join(root, "template");
   await mkdir(path.join(templateRoot, "src"), { recursive: true });
@@ -26,10 +33,40 @@ async function fixture() {
     databasePath: path.join(root, "control-plane.sqlite"),
     workspaceRoot: path.join(root, "workspaces"),
     templateRoot,
+    releasesRoot: path.join(root, "published"),
+    ...(buildProvider ? { buildProvider } : {}),
     logger: false,
   });
   apps.push(app);
-  return { app, root };
+  const created = await app.inject({
+    method: "POST",
+    url: "/projects",
+    payload: { name: "Fixture project" },
+  });
+  return { app, root, project: created.json().project };
+}
+
+class FakeBuildProvider implements BuildProvider {
+  #builds = 0;
+
+  async build(input: {
+    projectId: string;
+    workspaceRoot: string;
+  }): Promise<{ distPath: string }> {
+    this.#builds += 1;
+    const distPath = path.join(input.workspaceRoot, "dist");
+    await mkdir(distPath, { recursive: true });
+    await writeFile(
+      path.join(distPath, "index.html"),
+      `<html>build-${this.#builds}</html>`,
+    );
+    await mkdir(path.join(distPath, "assets"), { recursive: true });
+    await writeFile(
+      path.join(distPath, "assets", "app.js"),
+      `console.log("build-${this.#builds}")`,
+    );
+    return { distPath };
+  }
 }
 
 describe("Control Plane API", () => {
@@ -153,5 +190,79 @@ describe("Control Plane API", () => {
     expect(events.json().events).toMatchObject([
       { type: "run.cancelled", sequence: 0 },
     ]);
+  });
+
+  it("publishes a project, serves it publicly, and rolls back by activation", async () => {
+    const buildProvider = new FakeBuildProvider();
+    const { app, project } = await fixture(buildProvider);
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/projects/${project.id}/releases`,
+    });
+    expect(first.statusCode).toBe(201);
+    const firstBody = first.json();
+    expect(firstBody.release.status).toBe("ready");
+    expect(firstBody.publication.currentReleaseId).toBe(firstBody.release.id);
+    expect(firstBody.publication.baseUrl).toContain(
+      `/published/${project.id}/`,
+    );
+
+    const served = await app.inject({
+      method: "GET",
+      url: `/published/${project.id}/`,
+    });
+    expect(served.statusCode).toBe(200);
+    expect(served.body).toContain("build-1");
+    expect(served.headers["content-type"]).toContain("text/html");
+
+    const asset = await app.inject({
+      method: "GET",
+      url: `/published/${project.id}/assets/app.js`,
+    });
+    expect(asset.statusCode).toBe(200);
+    expect(asset.headers["cache-control"]).toContain("immutable");
+
+    const traversal = await app.inject({
+      method: "GET",
+      url: `/published/${project.id}/%2e%2e/%2e%2e/control-plane.sqlite`,
+    });
+    expect(traversal.statusCode).toBe(404);
+    expect(traversal.body).not.toContain("projects");
+
+    const second = await app.inject({
+      method: "POST",
+      url: `/projects/${project.id}/releases`,
+    });
+    expect(second.statusCode).toBe(201);
+    expect(second.json().release.id).not.toBe(firstBody.release.id);
+    expect(
+      (
+        await app.inject({ method: "GET", url: `/published/${project.id}/` })
+      ).body,
+    ).toContain("build-2");
+
+    const rolledBack = await app.inject({
+      method: "POST",
+      url: `/projects/${project.id}/releases/${firstBody.release.id}/activate`,
+    });
+    expect(rolledBack.statusCode).toBe(200);
+    expect(
+      rolledBack.json().publication.currentReleaseId,
+    ).toBe(firstBody.release.id);
+    expect(
+      (
+        await app.inject({ method: "GET", url: `/published/${project.id}/` })
+      ).body,
+    ).toContain("build-1");
+
+    const list = await app.inject({
+      method: "GET",
+      url: `/projects/${project.id}/releases`,
+    });
+    expect(list.json().releases).toHaveLength(2);
+    expect(list.json().publication.currentReleaseId).toBe(
+      firstBody.release.id,
+    );
   });
 });

@@ -43,7 +43,7 @@ const allowedChildEnvKeys = [
   "NO_PROXY",
 ] as const;
 
-function previewChildEnv(): NodeJS.ProcessEnv {
+export function controlledChildEnv(): NodeJS.ProcessEnv {
   const env: Record<string, string> = { BROWSER: "none" };
   for (const key of allowedChildEnvKeys) {
     const value = process.env[key];
@@ -92,7 +92,7 @@ export class LocalDevelopmentSandboxProvider implements PreviewProvider {
       ["run", "dev", "--host", "127.0.0.1", "--port", String(port)],
       {
         cwd: input.workspaceRoot,
-        env: previewChildEnv(),
+        env: controlledChildEnv(),
         stdio: ["ignore", "pipe", "pipe"],
         detached: true,
       },
@@ -151,7 +151,7 @@ async function runCommand(
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
-      env: previewChildEnv(),
+      env: controlledChildEnv(),
       stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";

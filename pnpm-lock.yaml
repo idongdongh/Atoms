@@ -54,6 +54,9 @@ importers:
       '@atoms/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@atoms/sandbox-sdk':
+        specifier: workspace:*
+        version: link:../../packages/sandbox-sdk
       '@atoms/workspace-sdk':
         specifier: workspace:*
         version: link:../../packages/workspace-sdk

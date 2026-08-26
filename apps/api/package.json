@@ -13,6 +13,7 @@
   "dependencies": {
     "@atoms/contracts": "workspace:*",
     "@atoms/db": "workspace:*",
+    "@atoms/sandbox-sdk": "workspace:*",
     "@atoms/workspace-sdk": "workspace:*",
     "fastify": "5.12.1"
   },

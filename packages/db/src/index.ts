@@ -8,6 +8,8 @@ import {
   chatMessageSchema,
   projectSchema,
   projectPreviewSchema,
+  projectPublicationSchema,
+  projectReleaseSchema,
   projectVersionSchema,
   toolCallSchema,
   canTransitionAgentRun,
@@ -16,6 +18,8 @@ import {
   type ChatMessage,
   type Project,
   type ProjectPreview,
+  type ProjectPublication,
+  type ProjectRelease,
   type ProjectVersion,
   type AgentRunStatus,
   type ToolCall,
@@ -103,6 +107,21 @@ type PreviewRecord = {
   updated_at: string;
 };
 
+type ReleaseRecord = {
+  id: string;
+  project_id: string;
+  commit_hash: string;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+};
+
+type PublicationRecord = {
+  project_id: string;
+  current_release_id: string | null;
+  updated_at: string;
+};
+
 function mapProject(record: ProjectRecord): Project {
   return projectSchema.parse({
     id: record.id,
@@ -185,6 +204,25 @@ function mapPreview(record: PreviewRecord): ProjectPreview {
     url: record.url,
     port: record.port,
     errorMessage: record.error_message,
+    updatedAt: record.updated_at,
+  });
+}
+
+function mapRelease(record: ReleaseRecord): ProjectRelease {
+  return projectReleaseSchema.parse({
+    id: record.id,
+    projectId: record.project_id,
+    commitHash: record.commit_hash,
+    status: record.status,
+    errorMessage: record.error_message,
+    createdAt: record.created_at,
+  });
+}
+
+function mapPublication(record: PublicationRecord): ProjectPublication {
+  return projectPublicationSchema.parse({
+    projectId: record.project_id,
+    currentReleaseId: record.current_release_id,
     updatedAt: record.updated_at,
   });
 }
@@ -305,6 +343,19 @@ export class ControlPlaneStore {
         url TEXT,
         port INTEGER,
         error_message TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS project_releases (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        commit_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        error_message TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS project_publications (
+        project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        current_release_id TEXT REFERENCES project_releases(id) ON DELETE SET NULL,
         updated_at TEXT NOT NULL
       );
     `);
@@ -787,6 +838,76 @@ export class ControlPlaneStore {
         updatedAt,
       );
     return this.getProjectPreview(input.projectId)!;
+  }
+
+  createRelease(input: {
+    id: string;
+    projectId: string;
+    commitHash: string;
+  }): ProjectRelease {
+    this.#database
+      .prepare(
+        `INSERT INTO project_releases (id, project_id, commit_hash, status, error_message, created_at)
+         VALUES (?, ?, ?, 'building', NULL, ?)`,
+      )
+      .run(input.id, input.projectId, input.commitHash, new Date().toISOString());
+    return this.getRelease(input.id);
+  }
+
+  getRelease(releaseId: string): ProjectRelease {
+    const record = this.#database
+      .prepare("SELECT * FROM project_releases WHERE id = ?")
+      .get(releaseId) as ReleaseRecord | undefined;
+    if (!record) throw new Error("Release not found");
+    return mapRelease(record);
+  }
+
+  completeRelease(
+    releaseId: string,
+    updates: { status: "ready" | "failed"; errorMessage?: string | null },
+  ): ProjectRelease {
+    this.#database
+      .prepare(
+        "UPDATE project_releases SET status = ?, error_message = ? WHERE id = ?",
+      )
+      .run(
+        updates.status,
+        updates.errorMessage ?? null,
+        releaseId,
+      );
+    return this.getRelease(releaseId);
+  }
+
+  listReleases(projectId: string): ProjectRelease[] {
+    const records = this.#database
+      .prepare(
+        "SELECT * FROM project_releases WHERE project_id = ? ORDER BY created_at DESC, id DESC",
+      )
+      .all(projectId) as unknown as ReleaseRecord[];
+    return records.map(mapRelease);
+  }
+
+  setPublication(input: {
+    projectId: string;
+    releaseId: string | null;
+  }): ProjectPublication {
+    this.#database
+      .prepare(
+        `INSERT INTO project_publications (project_id, current_release_id, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(project_id) DO UPDATE SET
+           current_release_id = excluded.current_release_id,
+           updated_at = excluded.updated_at`,
+      )
+      .run(input.projectId, input.releaseId, new Date().toISOString());
+    return this.getPublication(input.projectId)!;
+  }
+
+  getPublication(projectId: string): ProjectPublication | null {
+    const record = this.#database
+      .prepare("SELECT * FROM project_publications WHERE project_id = ?")
+      .get(projectId) as PublicationRecord | undefined;
+    return record ? mapPublication(record) : null;
   }
 
   appendAgentEvent(event: AgentEventInput): void {

@@ -123,6 +123,27 @@ export const toolCallSchema = z.object({
   completedAt: z.iso.datetime().nullable(),
 });
 
+export const projectReleaseStatusSchema = z.enum([
+  "building",
+  "ready",
+  "failed",
+]);
+
+export const projectReleaseSchema = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  commitHash: z.string().regex(/^[0-9a-f]{40}$/i),
+  status: projectReleaseStatusSchema,
+  errorMessage: z.string().min(1).nullable(),
+  createdAt: z.iso.datetime(),
+});
+
+export const projectPublicationSchema = z.object({
+  projectId: z.uuid(),
+  currentReleaseId: z.uuid().nullable(),
+  updatedAt: z.iso.datetime(),
+});
+
 export type Project = z.infer<typeof projectSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
 export type ProjectVersion = z.infer<typeof projectVersionSchema>;
@@ -131,3 +152,6 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type AgentRun = z.infer<typeof agentRunSchema>;
 export type CreateRunInput = z.infer<typeof createRunInputSchema>;
 export type ToolCall = z.infer<typeof toolCallSchema>;
+export type ProjectReleaseStatus = z.infer<typeof projectReleaseStatusSchema>;
+export type ProjectRelease = z.infer<typeof projectReleaseSchema>;
+export type ProjectPublication = z.infer<typeof projectPublicationSchema>;
