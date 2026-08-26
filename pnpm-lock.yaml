@@ -73,10 +73,10 @@ importers:
       '@atoms/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@fontsource/ibm-plex-sans':
+      '@fontsource/geist':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource/ibm-plex-serif':
+      '@fontsource/geist-mono':
         specifier: ^5.3.0
         version: 5.3.0
       '@vitejs/plugin-react':
@@ -303,11 +303,11 @@ packages:
   '@fastify/proxy-addr@5.1.0':
     resolution: {integrity: sha512-INS+6gh91cLUjB+PVHfu1UqcB76Sqtpyp7bnL+FYojhjygvOPA9ctiD/JDKsyD9Xgu4hUhCSJBPig/w7duNajw==}
 
-  '@fontsource/ibm-plex-sans@5.3.0':
-    resolution: {integrity: sha512-CbE4CbbEEZJX860XyUiRpsksXIQR8Rp2XDva2VO53NJox9tVNtusrysd2x5YkUEY3ErQ66W1IiiQL8/wihhw5w==}
+  '@fontsource/geist-mono@5.3.0':
+    resolution: {integrity: sha512-UtJ1BBBCVpMYdIcW7nEB45UAoAw5M53ZXs2t0ciPW+IokuAAIc56M8+kW5tXbRJCTpDw4XTtU7proT6NdQAHTg==}
 
-  '@fontsource/ibm-plex-serif@5.3.0':
-    resolution: {integrity: sha512-zwPfHB7EJbS5B8qnitPigJYzNdnt6PUeaoOA1gAAt//1pjpTVZN5sOU14NIAZ+C1xypL6GWsUG2VMYJW9bhJqQ==}
+  '@fontsource/geist@5.3.0':
+    resolution: {integrity: sha512-u03ftlfVwb05uijq2jGDJ03/HKGqMKaNFk7KOhkpBUex8+BhrAOfMs/XciJ2UUNUX9fEsZbZQld/RWMA2oFU7g==}
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -1237,9 +1237,9 @@ snapshots:
       '@fastify/forwarded': 3.0.2
       ipaddr.js: 2.5.0
 
-  '@fontsource/ibm-plex-sans@5.3.0': {}
+  '@fontsource/geist-mono@5.3.0': {}
 
-  '@fontsource/ibm-plex-serif@5.3.0': {}
+  '@fontsource/geist@5.3.0': {}
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 

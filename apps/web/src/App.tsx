@@ -15,6 +15,30 @@ import type {
 
 type PublicationView = ProjectPublication & { baseUrl: string | null };
 
+const avatarPalettes: ReadonlyArray<readonly [string, string]> = [
+  ["#fecaca", "#fda4af"],
+  ["#fed7aa", "#fdba74"],
+  ["#fef08a", "#fde047"],
+  ["#bbf7d0", "#86efac"],
+  ["#bfdbfe", "#93c5fd"],
+  ["#ddd6fe", "#c4b5fd"],
+  ["#f5d0fe", "#e879f9"],
+  ["#e2e8f0", "#cbd5e1"],
+];
+
+function avatarStyle(projectId: string): { background: string } {
+  let sum = 0;
+  for (const ch of projectId) sum += ch.charCodeAt(0);
+  const [from, to] = avatarPalettes[sum % avatarPalettes.length]!;
+  return { background: `linear-gradient(135deg, ${from}, ${to})` };
+}
+
+function initials(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "A";
+  return [...trimmed][0]!.toUpperCase();
+}
+
 type LoadState = "idle" | "loading" | "ready";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -107,9 +131,10 @@ export function App() {
   const [releases, setReleases] = useState<ProjectRelease[]>([]);
   const [publication, setPublication] = useState<PublicationView | null>(null);
   const [publishing, setPublishing] = useState(false);
-  const [rightTab, setRightTab] = useState<"preview" | "files" | "code">(
-    "preview",
-  );
+  const [rightTab, setRightTab] = useState<
+    "preview" | "files" | "code" | "publish"
+  >("preview");
+  const [showVersions, setShowVersions] = useState(false);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const [activeFile, setActiveFile] = useState<FileContent | null>(null);
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
@@ -496,7 +521,7 @@ export function App() {
           <p className="eyebrow">Atoms</p>
           <h1>{authMode === "register" ? "创建账号开始构建" : "欢迎回来"}</h1>
           <p>注册后即可创建项目，通过 Agent 生成应用并发布。</p>
-          <form className="project-form" onSubmit={submitAuth}>
+          <form className="auth-form" onSubmit={submitAuth}>
             {authMode === "register" && (
               <>
                 <label htmlFor="auth-name">名称</label>
@@ -580,10 +605,6 @@ export function App() {
       </header>
       <div className="workbench" id="workspace">
         <aside className="sidebar" aria-label="项目导航">
-          <div className="section-heading">
-            <span>Projects</span>
-            <span className="count">{projects.length}</span>
-          </div>
           <form className="project-form" onSubmit={createProject}>
             <label htmlFor="project-name">新项目名称</label>
             <div className="field-row">
@@ -591,21 +612,27 @@ export function App() {
                 id="project-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="例如：产品反馈板"
+                placeholder="新应用名称…"
                 maxLength={80}
                 disabled={creating}
               />
-              <button type="submit" disabled={!name.trim() || creating}>
-                {creating ? "创建中" : "创建"}
+              <button
+                type="submit"
+                className="primary"
+                disabled={!name.trim() || creating}
+              >
+                {creating ? "创建中" : "新建"}
               </button>
             </div>
           </form>
+          <div className="section-heading">
+            <span>应用</span>
+            <span className="count">{projects.length}</span>
+          </div>
           <nav className="project-list" aria-label="项目列表">
             {state === "loading" && <p className="muted">正在加载项目…</p>}
             {state === "ready" && projects.length === 0 && (
-              <p className="empty-copy">
-                创建项目后，Atoms 会生成一个可追踪版本的 React 工作区。
-              </p>
+              <p className="empty-copy">创建第一个应用，开始与 Agent 协作。</p>
             )}
             {projects.map((project) => (
               <button
@@ -618,8 +645,17 @@ export function App() {
                 onClick={() => setSelectedId(project.id)}
                 type="button"
               >
-                <span>{project.name}</span>
-                <small>{project.currentCommit.slice(0, 7)}</small>
+                <span
+                  className="app-avatar"
+                  style={avatarStyle(project.id)}
+                  aria-hidden="true"
+                >
+                  {initials(project.name)}
+                </span>
+                <span className="project-item-text">
+                  <span>{project.name}</span>
+                  <small>{project.currentCommit.slice(0, 7)}</small>
+                </span>
               </button>
             ))}
           </nav>
@@ -641,51 +677,100 @@ export function App() {
           <>
             <section className="chat-panel" aria-label="Agent 对话">
               <header className="chat-header">
-                <div>
+                <div className="title">
                   <p className="eyebrow">Project</p>
                   <h1>{selected.name}</h1>
                 </div>
-                <span className="status">
-                  <i aria-hidden="true" />
-                  {running
-                    ? `Agent ${activeRun?.status}`
-                    : activeRun?.status === "failed"
-                      ? "Needs attention"
-                      : "Ready"}
-                </span>
+                <div className="chat-header-actions">
+                  <span className="status">
+                    <i aria-hidden="true" />
+                    {running
+                      ? `Agent ${activeRun?.status}`
+                      : activeRun?.status === "failed"
+                        ? "Needs attention"
+                        : "Ready"}
+                  </span>
+                  <button
+                    type="button"
+                    className={showVersions ? "on" : ""}
+                    onClick={() => setShowVersions((open) => !open)}
+                  >
+                    版本 {versions.length}
+                  </button>
+                </div>
               </header>
-              <div className="chat-feed" ref={feedRef}>
-                {messages.length === 0 && events.length === 0 && (
-                  <div className="chat-empty">
-                    <p className="eyebrow">Prompt</p>
-                    <p className="muted">
-                      告诉 Agent 你想构建什么，例如"做一个任务管理面板"，或对现有应用说"增加深色模式"。
-                    </p>
+              {showVersions ? (
+                <div className="version-pane" aria-label="版本历史">
+                  <div className="version-pane-header">
+                    <h2>Version History</h2>
+                    <button type="button" onClick={() => setShowVersions(false)}>
+                      关闭
+                    </button>
                   </div>
-                )}
-                {messages.map((message) => (
-                  <div
-                    className={
-                      message.role === "user"
-                        ? "chat-bubble user"
-                        : "chat-bubble agent"
-                    }
-                    key={message.id}
-                  >
-                    <span>{message.role === "user" ? "You" : "Agent"}</span>
-                    <p>{message.content}</p>
-                  </div>
-                ))}
-                {events.slice(-12).map((event) => (
-                  <div
-                    className={`activity-item ${event.type.includes("failed") ? "failed" : ""}`}
-                    key={`${event.runId}-${event.sequence}`}
-                  >
-                    <span>{event.type}</span>
-                    <p>{eventLabel(event)}</p>
-                  </div>
-                ))}
-              </div>
+                  {versions.map((version, index) => (
+                    <div
+                      key={version.id}
+                      className={
+                        version.commitHash === selected.currentCommit
+                          ? "version-row current"
+                          : "version-row"
+                      }
+                    >
+                      <div className="meta">
+                        <strong>
+                          Version {versions.length - index}（
+                          {version.commitHash.slice(0, 7)}）
+                        </strong>
+                        <small title={version.message}>{version.message}</small>
+                      </div>
+                      <button
+                        type="button"
+                        className="primary restore"
+                        disabled={version.commitHash === selected.currentCommit}
+                        onClick={() => void restoreVersion(version)}
+                      >
+                        {version.commitHash === selected.currentCommit
+                          ? "当前"
+                          : "恢复"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="chat-feed" ref={feedRef}>
+                  {messages.length === 0 && events.length === 0 && (
+                    <div className="chat-empty">
+                      <p className="eyebrow">Prompt</p>
+                      <p>
+                        告诉 Agent 你想构建什么，例如"做一个任务管理面板"，或对现有应用说"增加深色模式"。
+                      </p>
+                    </div>
+                  )}
+                  {messages.map((message) =>
+                    message.role === "user" ? (
+                      <div className="chat-row user" key={message.id}>
+                        <div className="chat-bubble">
+                          <p>{message.content}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="chat-row agent" key={message.id}>
+                        <span className="who">Agent</span>
+                        <p>{message.content}</p>
+                      </div>
+                    ),
+                  )}
+                  {events.slice(-12).map((event) => (
+                    <div
+                      className={`activity-item ${event.type.includes("failed") ? "failed" : ""}`}
+                      key={`${event.runId}-${event.sequence}`}
+                    >
+                      <span>{event.type}</span>
+                      <p>{eventLabel(event)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
               {error && (
                 <div className="error-banner" role="alert">
                   {error}
@@ -693,30 +778,34 @@ export function App() {
               )}
               <form className="agent-box" onSubmit={sendPrompt}>
                 <label htmlFor="agent-prompt">告诉 Agent 你想构建什么</label>
-                <textarea
-                  id="agent-prompt"
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="例如：做一个任务管理面板，支持增删和标记完成"
-                  disabled={!selected || !!sending}
-                />
-                <div className="agent-actions">
-                  <button
-                    type="submit"
-                    disabled={!selected || !prompt.trim() || !!sending}
-                  >
-                    {sending ? "执行中…" : "发送"}
-                  </button>
-                  {running && (
-                    <button type="button" onClick={() => void cancelRun()}>
-                      取消
+                <div className="composer">
+                  <textarea
+                    id="agent-prompt"
+                    value={prompt}
+                    onChange={(event) => setPrompt(event.target.value)}
+                    placeholder="让 Agent 构建或修改你的应用…"
+                    disabled={!selected || !!sending}
+                  />
+                  <div className="composer-foot">
+                    {running && (
+                      <button type="button" onClick={() => void cancelRun()}>
+                        ■
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      className="send"
+                      disabled={!selected || !prompt.trim() || !!sending}
+                      aria-label="发送"
+                    >
+                      ➤
                     </button>
-                  )}
+                  </div>
                 </div>
               </form>
             </section>
             <section className="preview-panel" aria-label="预览、代码与发布">
-              <div className="preview-tabs" role="tablist" aria-label="右侧视图">
+              <div className="preview-toolbar" role="tablist" aria-label="右侧视图">
                 <button
                   type="button"
                   role="tab"
@@ -744,7 +833,16 @@ export function App() {
                 >
                   代码
                 </button>
-                {publication?.baseUrl && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={rightTab === "publish"}
+                  className={rightTab === "publish" ? "tab active" : "tab"}
+                  onClick={() => setRightTab("publish")}
+                >
+                  发布
+                </button>
+                {publication?.baseUrl && rightTab !== "publish" && (
                   <a
                     className="tab-link"
                     href={publication.baseUrl}
@@ -766,9 +864,6 @@ export function App() {
                     />
                   ) : (
                     <div className="preview-empty">
-                      <span className="preview-icon" aria-hidden="true">
-                        ↗
-                      </span>
                       <strong>
                         {preview?.status === "failed"
                           ? "Preview 启动失败"
@@ -781,7 +876,7 @@ export function App() {
                     </div>
                   ))}
                 {rightTab === "files" && (
-                  <div className="file-browser full" aria-label="项目文件">
+                  <div className="file-browser" aria-label="项目文件">
                     {files.map((file) => (
                       <button
                         className={
@@ -814,66 +909,66 @@ export function App() {
                   ) : (
                     <div className="code-empty">在"文件"标签选择一个文件查看内容</div>
                   ))}
-              </div>
-              <div className="publish-bar">
-                <div className="publish-actions">
-                  <button
-                    type="button"
-                    disabled={publishing || !!running}
-                    onClick={() => void publishProject()}
-                  >
-                    {publishing ? "构建中…" : "发布"}
-                  </button>
-                  {publication?.baseUrl ? (
-                    <a
-                      className="publish-url"
-                      href={publication.baseUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {publication.baseUrl}
-                    </a>
-                  ) : (
-                    <span className="muted">发布后获得公网链接</span>
-                  )}
-                </div>
-                {releases.length > 0 && (
-                  <div className="chip-row">
-                    {releases.slice(0, 4).map((release) => (
+                {rightTab === "publish" && (
+                  <div className="publish-view" aria-label="发布">
+                    <div className="headline">
+                      <strong>发布应用</strong>
                       <button
-                        key={release.id}
                         type="button"
-                        className="chip"
-                        disabled={
-                          release.status !== "ready" ||
-                          release.id === publication?.currentReleaseId
-                        }
-                        onClick={() => void activateRelease(release)}
-                        title={release.errorMessage ?? release.commitHash}
+                        className="primary"
+                        disabled={publishing || !!running}
+                        onClick={() => void publishProject()}
                       >
-                        {release.createdAt.slice(5, 16).replace("T", " ")}
-                        {release.id === publication?.currentReleaseId
-                          ? " · 当前"
-                          : ""}
+                        {publishing ? "构建中…" : "发布当前版本"}
                       </button>
-                    ))}
+                    </div>
+                    {publication?.baseUrl ? (
+                      <a className="publish-url" href={publication.baseUrl} target="_blank" rel="noreferrer">
+                        {publication.baseUrl}
+                      </a>
+                    ) : (
+                      <p className="muted">
+                        发布后会生成一个可公开访问的链接，任何人都可以打开；再次发布或回退随时可切。
+                      </p>
+                    )}
+                    {releases.length > 0 &&
+                      releases.slice(0, 8).map((release) => (
+                        <div
+                          key={release.id}
+                          className={
+                            release.id === publication?.currentReleaseId
+                              ? "release-row current"
+                              : "release-row"
+                          }
+                        >
+                          <div className="meta">
+                            <strong>
+                              {release.createdAt.slice(0, 16).replace("T", " ")}
+                              {release.id === publication?.currentReleaseId
+                                ? " · 当前线上版本"
+                                : ""}
+                            </strong>
+                            <small title={release.errorMessage ?? ""}>
+                              {release.status} · {release.commitHash.slice(0, 7)}
+                            </small>
+                          </div>
+                          <button
+                            type="button"
+                            className="outline"
+                            disabled={
+                              release.status !== "ready" ||
+                              release.id === publication?.currentReleaseId
+                            }
+                            onClick={() => void activateRelease(release)}
+                          >
+                            {release.id === publication?.currentReleaseId
+                              ? "线上"
+                              : "切到此版本"}
+                          </button>
+                        </div>
+                      ))}
                   </div>
                 )}
-                <div className="chip-row">
-                  <span className="muted">版本</span>
-                  {versions.slice(0, 5).map((version) => (
-                    <button
-                      key={version.id}
-                      type="button"
-                      className="chip"
-                      disabled={version.commitHash === selected.currentCommit}
-                      onClick={() => void restoreVersion(version)}
-                      title={version.message}
-                    >
-                      {version.commitHash.slice(0, 7)}
-                    </button>
-                  ))}
-                </div>
               </div>
             </section>
           </>
