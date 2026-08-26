@@ -243,3 +243,13 @@
 .text-xs-sm {
   font-size: 0.82rem;
 }
+
+/* Panel resize handle: invisible seam, warm hint on hover/drag. */
+.panel-resize-handle {
+  background: transparent;
+  transition: background-color 150ms ease;
+}
+.panel-resize-handle:hover,
+.panel-resize-handle[data-resize-handle-state="drag"] {
+  background: color-mix(in oklab, var(--ring) 50%, transparent);
+}

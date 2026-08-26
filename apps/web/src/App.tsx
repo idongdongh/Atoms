@@ -1063,7 +1063,7 @@ export function App() {
               </Panel>
               <PanelResizeHandle
                 className={cn(
-                  "bg-gray-200 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700",
+                  "panel-resize-handle",
                   chatCollapsed ? "w-2" : "w-1",
                 )}
               />
