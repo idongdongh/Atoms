@@ -17,6 +17,9 @@ services:
       ATOMS_RELEASES_ROOT: /data/published
       ATOMS_TEMPLATE_ROOT: /app/templates/react-vite
       ATOMS_PREVIEW_PROVIDER: local
+      # Keep the pnpm store on the data volume so dependency installs survive
+      # container rebuilds instead of re-downloading from npm each time.
+      npm_config_store_dir: /data/.pnpm-store
     volumes:
       - atoms-data:/data
     expose:

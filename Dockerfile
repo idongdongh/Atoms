@@ -15,6 +15,10 @@ COPY packages ./packages
 COPY templates ./templates
 RUN pnpm install --frozen-lockfile
 RUN pnpm -r --if-present build
+# Pre-install the generated-app template's dependencies so every new project
+# starts its preview instantly (node_modules ship inside the image; the
+# workspace-level install then becomes a no-op).
+RUN pnpm --dir templates/react-vite install --ignore-workspace --frozen-lockfile
 
 # ---------------------------------------------------------------------------
 # Runtime stage (compose target: runtime). The whole workspace is copied

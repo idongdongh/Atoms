@@ -93,6 +93,7 @@ export class LocalDevelopmentSandboxProvider implements PreviewProvider {
         "--ignore-workspace",
         "--ignore-scripts",
         "--no-frozen-lockfile",
+        "--prefer-offline",
         ...(process.env.ATOMS_PREVIEW_OFFLINE === "true" ? ["--offline"] : []),
       ];
       await runCommand("pnpm", installArgs, input.workspaceRoot);
