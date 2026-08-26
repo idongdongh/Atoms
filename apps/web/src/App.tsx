@@ -1124,11 +1124,20 @@ export function App() {
                         .slice(-12)
                         // Progress narration (message.delta) shows only while
                         // the run is live; once it ends the stored assistant
-                        // message replaces it.
-                        .filter(
-                          (event) =>
-                            event.type !== "message.delta" || Boolean(running),
-                        )
+                        // message replaces it. Run start/completion labels are
+                        // noise the version badge already covers.
+                        .filter((event) => {
+                          if (
+                            event.type === "run.started" ||
+                            event.type === "run.completed"
+                          ) {
+                            return false;
+                          }
+                          if (event.type === "message.delta") {
+                            return Boolean(running);
+                          }
+                          return true;
+                        })
                         .map((event) => (
                           <div
                             key={`${event.runId}-${event.sequence}`}
