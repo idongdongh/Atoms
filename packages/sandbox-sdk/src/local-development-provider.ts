@@ -89,7 +89,20 @@ export class LocalDevelopmentSandboxProvider implements PreviewProvider {
     }
     const child = spawn(
       "pnpm",
-      ["run", "dev", "--host", "127.0.0.1", "--port", String(port)],
+      [
+        "run",
+        "dev",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(port),
+        // Vite emits root-absolute module URLs (/src/main.tsx, /@vite/client)
+        // which a <base> tag cannot rewrite, so previews never rendered
+        // through the /p/<id>/ gateway. Serving under the same prefix fixes
+        // both the gateway and the direct 127.0.0.1 access (vite redirects
+        // / to the base path).
+        `--base=/p/${input.projectId}/`,
+      ],
       {
         cwd: input.workspaceRoot,
         env: controlledChildEnv(),
