@@ -111,6 +111,30 @@ describe("LocalGitWorkspace", () => {
     ).not.toEqual(expect.arrayContaining([".env", "node_modules"]));
   });
 
+  it("searches text without traversing reserved files", async () => {
+    const { workspaceRoot, workspace } = await fixture();
+    await writeFile(path.join(workspaceRoot, ".env"), "TOKEN=secret\n");
+    const matches = await workspace.searchFiles("value");
+    expect(matches).toMatchObject([
+      { path: "src/main.ts", line: 1, column: 14 },
+    ]);
+    expect(await workspace.searchFiles("secret")).toEqual([]);
+  });
+
+  it("discards managed changes after a failed run", async () => {
+    const { workspace } = await fixture();
+    await workspace.writeFile(
+      "src/generated.ts",
+      "export const broken = true;\n",
+    );
+    await workspace.writeFile("src/main.ts", "export const value = 2;\n");
+    await workspace.discardChanges();
+    await expect(workspace.readFile("src/generated.ts")).rejects.toThrow();
+    await expect(workspace.readFile("src/main.ts")).resolves.toMatchObject({
+      content: "export const value = 1;\n",
+    });
+  });
+
   it("commits only mutations made through the workspace API", async () => {
     const { workspaceRoot, workspace } = await fixture();
     await writeFile(path.join(workspaceRoot, ".env"), "TOKEN=secret\n");

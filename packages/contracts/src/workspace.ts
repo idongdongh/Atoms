@@ -69,6 +69,14 @@ export const fileMutationResultSchema = z.object({
   changed: z.boolean(),
 });
 
+export const fileSearchMatchSchema = z.object({
+  path: workspacePathSchema,
+  line: z.number().int().positive(),
+  column: z.number().int().positive(),
+  snippet: z.string().max(500),
+});
+
 export type FileEntry = z.infer<typeof fileEntrySchema>;
 export type FileContent = z.infer<typeof fileContentSchema>;
 export type FileMutationResult = z.infer<typeof fileMutationResultSchema>;
+export type FileSearchMatch = z.infer<typeof fileSearchMatchSchema>;

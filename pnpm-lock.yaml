@@ -25,6 +25,22 @@ importers:
         version: 4.1.11(@types/node@26.3.0)(vite@8.2.2(@types/node@26.3.0)(esbuild@0.28.2)(tsx@4.23.12))
 
   apps/agent-worker:
+    dependencies:
+      '@atoms/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@atoms/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@atoms/sandbox-sdk':
+        specifier: workspace:*
+        version: link:../../packages/sandbox-sdk
+      '@atoms/workspace-sdk':
+        specifier: workspace:*
+        version: link:../../packages/workspace-sdk
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       tsx:
         specifier: 4.23.12
@@ -32,6 +48,15 @@ importers:
 
   apps/api:
     dependencies:
+      '@atoms/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@atoms/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@atoms/workspace-sdk':
+        specifier: workspace:*
+        version: link:../../packages/workspace-sdk
       fastify:
         specifier: 5.12.1
         version: 5.12.1
@@ -42,6 +67,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@atoms/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@vitejs/plugin-react':
         specifier: 6.1.0
         version: 6.1.0(vite@8.2.2(@types/node@26.3.0)(esbuild@0.28.2)(tsx@4.23.12))
@@ -68,11 +96,21 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/db:
+    dependencies:
+      '@atoms/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/sandbox-sdk:
     dependencies:
       '@atoms/contracts':
         specifier: workspace:*
         version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: 26.3.0
+        version: 26.3.0
 
   packages/workspace-sdk:
     dependencies:

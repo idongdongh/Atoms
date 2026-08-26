@@ -1,13 +1,12 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { App } from "./App.js";
+import { App } from "./App";
 
 describe("App", () => {
-  it("renders the product promise and keeps the unfinished action disabled", () => {
-    const markup = renderToStaticMarkup(<App />);
-
-    expect(markup).toContain("把想法变成可以运行的产品");
-    expect(markup).toContain("开始构建");
-    expect(markup).toContain("disabled");
+  it("renders an honest project onboarding workflow", () => {
+    const html = renderToString(<App />);
+    expect(html).toContain("新项目名称");
+    expect(html).toContain("从一个真实、可版本化的项目开始");
+    expect(html).toContain("预览服务尚未连接");
   });
 });

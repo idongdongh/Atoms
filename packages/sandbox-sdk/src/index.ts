@@ -1,6 +1,12 @@
 import type { SandboxInfo, SandboxStatus } from "@atoms/contracts";
 import { canTransitionSandbox, sandboxInfoSchema } from "@atoms/contracts";
 
+export { LocalDevelopmentSandboxProvider } from "./local-development-provider.js";
+export type {
+  PreviewProcess,
+  PreviewProvider,
+} from "./local-development-provider.js";
+
 function snapshot(sandbox: SandboxInfo): SandboxInfo {
   return { ...sandbox };
 }

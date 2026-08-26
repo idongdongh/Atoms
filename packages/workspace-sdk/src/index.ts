@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type {
   FileContent,
   FileEntry,
+  FileSearchMatch,
   FileMutationResult,
 } from "@atoms/contracts";
 import { workspacePathSchema } from "@atoms/contracts";
@@ -13,10 +14,12 @@ export { WorkspaceWriteLock } from "./write-lock.js";
 export interface Workspace {
   listFiles(): Promise<FileEntry[]>;
   readFile(path: string): Promise<FileContent>;
+  searchFiles(query: string): Promise<FileSearchMatch[]>;
   writeFile(path: string, content: string): Promise<FileMutationResult>;
   applyPatch(input: ApplyPatchInput): Promise<FileMutationResult>;
   deleteFile(path: string): Promise<FileMutationResult>;
   getDiff(): Promise<string>;
+  discardChanges(): Promise<void>;
   commit(message: string): Promise<string>;
   restore(commitHash: string, message: string): Promise<string>;
 }
@@ -60,6 +63,26 @@ export class FakeWorkspace implements Workspace {
     return { path: safePath, content, contentHash: hash(content) };
   }
 
+  async searchFiles(query: string): Promise<FileSearchMatch[]> {
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) throw new Error("Search query is required");
+    const matches: FileSearchMatch[] = [];
+    for (const [path, content] of this.#files) {
+      for (const [index, line] of content.split("\n").entries()) {
+        const column = line.toLocaleLowerCase().indexOf(needle);
+        if (column !== -1) {
+          matches.push({
+            path,
+            line: index + 1,
+            column: column + 1,
+            snippet: line.slice(0, 500),
+          });
+        }
+      }
+    }
+    return matches;
+  }
+
   async writeFile(path: string, content: string): Promise<FileMutationResult> {
     const safePath = workspacePathSchema.parse(path);
     const changed = this.#files.get(safePath) !== content;
@@ -97,6 +120,11 @@ export class FakeWorkspace implements Workspace {
 
   async getDiff(): Promise<string> {
     throw new Error("FakeWorkspace does not implement Git diff");
+  }
+
+  async discardChanges(): Promise<void> {
+    // FakeWorkspace has no separate committed snapshot; tests can reset it by
+    // constructing a new instance when they need that behavior.
   }
 
   async commit(): Promise<string> {

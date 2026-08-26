@@ -13,6 +13,7 @@ import path from "node:path";
 import type {
   FileContent,
   FileEntry,
+  FileSearchMatch,
   FileMutationResult,
 } from "@atoms/contracts";
 import type { ApplyPatchInput, Workspace } from "./index.js";
@@ -114,6 +115,32 @@ export class LocalGitWorkspace implements Workspace {
     return { path: relativePath, content, contentHash: hash(content) };
   }
 
+  async searchFiles(query: string): Promise<FileSearchMatch[]> {
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) throw new Error("Search query is required");
+    const matches: FileSearchMatch[] = [];
+    for (const entry of await this.listFiles()) {
+      if (entry.kind !== "file") continue;
+      try {
+        const content = (await this.readFile(entry.path)).content;
+        for (const [index, line] of content.split("\n").entries()) {
+          const column = line.toLocaleLowerCase().indexOf(needle);
+          if (column !== -1) {
+            matches.push({
+              path: entry.path,
+              line: index + 1,
+              column: column + 1,
+              snippet: line.slice(0, 500),
+            });
+          }
+        }
+      } catch {
+        // Binary and oversized files are intentionally skipped from text search.
+      }
+    }
+    return matches;
+  }
+
   async writeFile(
     unsafePath: string,
     content: string,
@@ -207,6 +234,41 @@ export class LocalGitWorkspace implements Workspace {
 
   async getDiff(): Promise<string> {
     return runGit(this.root, ["diff", "--no-ext-diff", "--", "."]);
+  }
+
+  async discardChanges(): Promise<void> {
+    const paths = [...this.#pendingPaths].sort();
+    if (paths.length === 0) return;
+    const trackedPaths: string[] = [];
+    for (const relativePath of paths) {
+      const tracked = await runGit(this.root, [
+        "cat-file",
+        "-e",
+        `HEAD:${relativePath}`,
+      ]).then(
+        () => true,
+        () => false,
+      );
+      if (tracked) {
+        trackedPaths.push(relativePath);
+      } else {
+        const { absolutePath } = await resolveSafeWorkspacePath(
+          this.root,
+          relativePath,
+        );
+        await rm(absolutePath, { force: true });
+      }
+    }
+    if (trackedPaths.length > 0) {
+      await runGit(this.root, [
+        "restore",
+        "--staged",
+        "--worktree",
+        "--",
+        ...trackedPaths,
+      ]);
+    }
+    this.#pendingPaths.clear();
   }
 
   async commit(message: string): Promise<string> {

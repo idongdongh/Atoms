@@ -3,6 +3,8 @@ import {
   agentEventSchema,
   canTransitionAgentRun,
   canTransitionSandbox,
+  createProjectInputSchema,
+  projectSchema,
   sandboxInfoSchema,
   workspacePathSchema,
 } from "./index.js";
@@ -69,5 +71,17 @@ describe("contracts", () => {
     expect(canTransitionAgentRun("succeeded", "running")).toBe(false);
     expect(canTransitionSandbox("starting", "running")).toBe(true);
     expect(canTransitionSandbox("running", "installing")).toBe(false);
+  });
+
+  it("validates project API payloads", () => {
+    expect(createProjectInputSchema.parse({ name: "  Task board  " })).toEqual({
+      name: "Task board",
+    });
+    expect(
+      projectSchema.safeParse({
+        id: "bad-id",
+        name: "Task board",
+      }).success,
+    ).toBe(false);
   });
 });

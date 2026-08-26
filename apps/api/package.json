@@ -11,6 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@atoms/contracts": "workspace:*",
+    "@atoms/db": "workspace:*",
+    "@atoms/workspace-sdk": "workspace:*",
     "fastify": "5.12.1"
   },
   "devDependencies": {

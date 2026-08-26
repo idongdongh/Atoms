@@ -67,6 +67,11 @@ export const agentEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     ...baseEventShape,
+    type: z.literal("preview.failed"),
+    error: z.string().min(1),
+  }),
+  z.object({
+    ...baseEventShape,
     type: z.literal("run.completed"),
     commitHash: z.string().min(1),
   }),

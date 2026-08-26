@@ -2,16 +2,20 @@
 
 ## 实施进度
 
-更新时间：2026-08-25
+更新时间：2026-08-26
 
-| 里程碑 | 状态   | 已完成                                                                                                | 待完成                                   |
-| ------ | ------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| M0     | 进行中 | pnpm Monorepo、Web/API/Worker 骨架、统一 format/typecheck/test/build、核心 ADR                        | PostgreSQL/Redis/对象存储开发环境、CI    |
-| M1     | 进行中 | Zod Contract、Agent Run/Sandbox 状态机、Workspace/Sandbox Fake Provider                               | 持久事件存储与 sequence 重放             |
-| M2     | 进行中 | 安全路径解析、符号链接防护、原子写入、Patch、Git diff/commit/restore、项目写锁、模板复制与 Git 初始化 | 项目元数据/API、文件审计、搜索与版本列表 |
-| M3-M10 | 未开始 | —                                                                                                     | 按下文里程碑实施                         |
+| 里程碑   | 状态                   | 已完成                                                                                                                                     | 待完成                                                |
+| -------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| M0       | 进行中                 | pnpm Monorepo、Web/API/Worker 骨架、统一 format/typecheck/test/build、核心 ADR                                                             | PostgreSQL/Redis/对象存储开发环境、CI                 |
+| M1       | 已完成（本地适配器）   | Zod Contract、Agent Run/Sandbox 状态机、Workspace/Sandbox Fake Provider、本地持久事件存储与 sequence 重放                                  | PostgreSQL 适配器、生产队列和 Worker 恢复机制         |
+| M2       | 已完成（本地适配器）   | 固定 React/Vite 模板、项目元数据、文件/版本 API、安全路径、原子写入、Patch、文件搜索、Git diff/commit/restore、项目写锁和 Builder 文件查看 | 完整审计查询和远程 Workspace 服务                     |
+| M3       | 已完成（本地开发闭环） | 本地开发 Sandbox Provider、受控依赖安装、Vite Preview 生命周期、Preview 状态持久化与 iframe 展示                                           | 远程隔离 Sandbox、Preview Gateway、资源限制和签名 URL |
+| M4/M6/M7 | 已完成（本地开发闭环） | 结构化 Tool Calling、Run 队列领取、幂等/取消/重试、SSE 回放、Agent 活动与版本恢复交互                                                      | 模型/队列高可用、真实验证修复循环、生产级恢复和 E2E   |
+| M8-M10   | 未完成                 | —                                                                                                                                          | 临时工作树、故障注入、安全加固、可观测性和浏览器 E2E  |
 
 本表只记录已通过仓库检查的能力，不以目录或占位文件视为里程碑完成。
+
+本地开发当前使用 Node.js SQLite 保存用户、项目、Chat、Run、工具调用、Preview、版本索引和 Agent 事件；Git 仍是项目代码的事实来源。SQLite、Demo Model 和 Local Development Sandbox 只用于本地演示与测试：Preview 进程仍在开发机上运行，不代表生产隔离。部署架构仍按 PostgreSQL、持久队列、对象存储和远程隔离 Sandbox 推进。
 
 ## 1. 阶段目标
 
@@ -83,7 +87,7 @@
 - 自动生成端到端测试。
 - 任意语言、任意框架和任意运行时。
 
-第一阶段只支持经过验证的 TypeScript、React 和 Vite 模板。Sandbox 与 Workspace 接口仍需保持对未来模板和运行时的扩展能力。
+第一阶段只支持经过验证的 TypeScript、React 和 Vite 模板。当前已经完成可运行的本地纵向切片；在远程 Sandbox、临时工作树和安全/E2E 验收完成前，不能宣称第一阶段生产能力完成。Sandbox 与 Workspace 接口保持对未来模板和运行时的扩展能力。
 
 ## 4. 总体架构
 
@@ -393,6 +397,7 @@ validation.completed
 build.log
 preview.starting
 preview.ready
+preview.failed
 run.completed
 run.failed
 run.cancelled

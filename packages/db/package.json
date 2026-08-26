@@ -1,5 +1,5 @@
 {
-  "name": "@atoms/sandbox-sdk",
+  "name": "@atoms/db",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,8 +16,5 @@
   },
   "dependencies": {
     "@atoms/contracts": "workspace:*"
-  },
-  "devDependencies": {
-    "@types/node": "26.3.0"
   }
 }

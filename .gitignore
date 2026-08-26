@@ -10,3 +10,5 @@ coverage/
 !.env.example
 .vercel/
 dyad/
+.atoms-data/
+.zcode/

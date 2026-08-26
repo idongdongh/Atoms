@@ -1,6 +1,10 @@
 import { createApp } from "./app.js";
 
-const app = createApp();
+const app = createApp({
+  databasePath: process.env.ATOMS_DATABASE_PATH,
+  workspaceRoot: process.env.ATOMS_WORKSPACE_ROOT,
+  templateRoot: process.env.ATOMS_TEMPLATE_ROOT,
+});
 const port = Number(process.env.PORT ?? 3000);
 
 try {

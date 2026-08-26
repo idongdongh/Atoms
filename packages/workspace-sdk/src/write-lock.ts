@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { open, mkdir, readFile, realpath, rename, rm } from "node:fs/promises";
+import { open, mkdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -23,18 +23,32 @@ function processIsAlive(processId: number): boolean {
 }
 
 async function isStale(lockPath: string): Promise<boolean> {
+  let raw: string;
   try {
-    const metadata = JSON.parse(
-      await readFile(lockPath, "utf8"),
-    ) as LockMetadata;
-    const age = Date.now() - Date.parse(metadata.acquiredAt);
-    if (!Number.isFinite(age) || age > staleAfterMs) return true;
-    return (
-      metadata.hostname === os.hostname() && !processIsAlive(metadata.processId)
-    );
+    raw = await readFile(lockPath, "utf8");
   } catch {
     return true;
   }
+  let metadata: LockMetadata;
+  try {
+    metadata = JSON.parse(raw) as LockMetadata;
+  } catch {
+    // The lock file is written after it is created; a freshly created but
+    // still-empty lock must not be treated as stale.
+    try {
+      const stats = await stat(lockPath);
+      return Date.now() - stats.mtimeMs > 5_000;
+    } catch {
+      return true;
+    }
+  }
+  const age = Date.now() - Date.parse(metadata.acquiredAt);
+  if (metadata.hostname === os.hostname()) {
+    // A live process keeps its lock even past staleAfterMs; long agent runs
+    // are legitimate. Staleness on the same host requires a dead owner.
+    return !Number.isFinite(age) || !processIsAlive(metadata.processId);
+  }
+  return !Number.isFinite(age) || age > staleAfterMs;
 }
 
 export class WorkspaceWriteLock {

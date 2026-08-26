@@ -10,6 +10,13 @@
     "test": "vitest run src",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@atoms/contracts": "workspace:*",
+    "@atoms/db": "workspace:*",
+    "@atoms/sandbox-sdk": "workspace:*",
+    "@atoms/workspace-sdk": "workspace:*",
+    "zod": "4.4.3"
+  },
   "devDependencies": {
     "tsx": "4.23.12"
   }

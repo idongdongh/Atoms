@@ -5,6 +5,7 @@
 ## 当前文档
 
 - `phase-1-development-plan.md`：第一阶段 Builder 内核的范围、架构、里程碑与验收标准。
+- `phase-2-development-plan.md`：第二阶段全栈交付、GitHub 同步与生产发布的范围、里程碑与 Beta 门禁。
 - `adr/`：已经接受的系统级架构决策。
 
 ## 维护约定
