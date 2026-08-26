@@ -81,18 +81,19 @@ export function parseSupabaseEnv(
   return { url, anonKey, serviceRoleKey };
 }
 
-export function physicalTableName(projectId: string, table: string): string {
-  // Project prefix keeps every generated app's tables isolated in the shared
-  // Supabase project; identifiers stay well under Postgres' 63-byte limit.
-  return `a${projectId.replaceAll("-", "").slice(0, 8)}_${table}`;
+export function physicalTableName(prefix: string, table: string): string {
+  // The prefix is a per-project random secret (not the public project id),
+  // so other tenants cannot guess table names even though RLS allows anon
+  // CRUD. Identifiers stay well under Postgres' 63-byte limit.
+  return `a${prefix}_${table}`;
 }
 
 export function createTableSql(
-  projectId: string,
+  prefix: string,
   input: unknown,
 ): { table: string; sql: string } {
   const parsed = createTableArgs.parse(input);
-  const table = physicalTableName(projectId, parsed.table);
+  const table = physicalTableName(prefix, parsed.table);
   const columnDefs = parsed.columns.map((column) => {
     const nullability = column.required ? " not null" : "";
     return `"${column.name}" ${column.type}${nullability}`;
@@ -114,10 +115,10 @@ export function createTableSql(
 
 export async function executeCreateTable(
   config: SupabaseConfig,
-  projectId: string,
+  prefix: string,
   input: unknown,
 ): Promise<Record<string, unknown>> {
-  const { table, sql } = createTableSql(projectId, input);
+  const { table, sql } = createTableSql(prefix, input);
   const response = await fetch(`${config.url}/rest/v1/rpc/atoms_exec_sql`, {
     method: "POST",
     headers: {

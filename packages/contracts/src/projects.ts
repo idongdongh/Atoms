@@ -17,6 +17,10 @@ export const projectSchema = z.object({
   currentCommit: z.string().regex(/^[0-9a-f]{40}$/i),
   status: projectStatusSchema,
   chatId: z.uuid(),
+  // Random per-project prefix for generated-app table names; deliberately
+  // not derived from the (public) project id so other tenants cannot guess
+  // them.
+  supabasePrefix: z.string().length(8).nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

@@ -388,13 +388,17 @@ Database: when the app needs persistent data, first call db_create_table (it ret
   }
 
   #supabaseContext(projectId: string): {
-    projectId: string;
+    prefix: string;
     supabase: SupabaseConfig;
   } {
     if (!this.#supabase) {
       throw new Error("Supabase is not configured for this runner");
     }
-    return { projectId, supabase: this.#supabase };
+    const prefix = this.#store.getProject(projectId).supabasePrefix;
+    if (!prefix) {
+      throw new Error("Project has no table prefix assigned");
+    }
+    return { prefix, supabase: this.#supabase };
   }
 
   #eventEmitter(runId: string): (event: EventInput) => void {
@@ -417,7 +421,7 @@ async function executeTool(
   workspace: Workspace,
   toolCall: ModelToolCall,
   changedPaths: Set<string>,
-  context?: { projectId: string; supabase: SupabaseConfig },
+  context?: { prefix: string; supabase: SupabaseConfig },
 ): Promise<unknown> {
   const raw: unknown = JSON.parse(toolCall.arguments);
   switch (toolCall.name) {
@@ -427,7 +431,7 @@ async function executeTool(
           "Database is not configured on this deployment; use localStorage instead",
         );
       }
-      return await executeCreateTable(context.supabase, context.projectId, raw);
+      return await executeCreateTable(context.supabase, context.prefix, raw);
     }
     case "list_files": {
       listFilesArgs.parse(raw);

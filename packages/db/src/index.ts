@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -37,6 +37,7 @@ type ProjectRecord = {
   current_commit: string;
   status: string;
   chat_id: string;
+  supabase_prefix: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -161,6 +162,7 @@ function mapProject(record: ProjectRecord): Project {
     currentCommit: record.current_commit,
     status: record.status,
     chatId: record.chat_id,
+    supabasePrefix: record.supabase_prefix,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   });
@@ -302,6 +304,7 @@ export class ControlPlaneStore {
         current_commit TEXT NOT NULL,
         status TEXT NOT NULL,
         chat_id TEXT NOT NULL UNIQUE,
+        supabase_prefix TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -421,6 +424,20 @@ export class ControlPlaneStore {
     } catch {
       // Column already exists.
     }
+    // Databases created before randomized table prefixes lack the column;
+    // backfill existing rows so old projects keep a guess-proof prefix too.
+    try {
+      this.#database.exec(
+        "ALTER TABLE projects ADD COLUMN supabase_prefix TEXT",
+      );
+    } catch {
+      // Column already exists.
+    }
+    this.#database
+      .prepare(
+        "UPDATE projects SET supabase_prefix = lower(hex(randomblob(4))) WHERE supabase_prefix IS NULL",
+      )
+      .run();
   }
 
   createUser(input: {
@@ -508,8 +525,8 @@ export class ControlPlaneStore {
       this.#database
         .prepare(
           `INSERT INTO projects
-            (id, user_id, name, slug, template_id, default_branch, current_commit, status, chat_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?)`,
+            (id, user_id, name, slug, template_id, default_branch, current_commit, status, chat_id, supabase_prefix, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)`,
         )
         .run(
           input.id,
@@ -520,6 +537,7 @@ export class ControlPlaneStore {
           input.defaultBranch,
           input.currentCommit,
           input.chatId,
+          randomBytes(4).toString("hex"),
           input.createdAt,
           input.createdAt,
         );

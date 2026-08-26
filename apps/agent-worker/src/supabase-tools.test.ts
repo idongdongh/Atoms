@@ -6,26 +6,26 @@ import {
   physicalTableName,
 } from "./supabase-tools.js";
 
-const projectId = "448bb2af-aa5a-40a5-999f-2eb1c5c50202";
+const prefix = "9f3ab2c1";
 
 describe("physicalTableName", () => {
   it("prefixes the project so apps cannot collide", () => {
-    expect(physicalTableName(projectId, "todos")).toBe("a448bb2af_todos");
+    expect(physicalTableName(prefix, "todos")).toBe("a9f3ab2c1_todos");
   });
 });
 
 describe("createTableSql", () => {
   it("emits create table, RLS and a public CRUD policy", () => {
-    const { table, sql } = createTableSql(projectId, {
+    const { table, sql } = createTableSql(prefix, {
       table: "todos",
       columns: [
         { name: "label", type: "text", required: true },
         { name: "done", type: "boolean" },
       ],
     });
-    expect(table).toBe("a448bb2af_todos");
+    expect(table).toBe("a9f3ab2c1_todos");
     expect(sql).toContain(
-      'create table if not exists public."a448bb2af_todos"',
+      'create table if not exists public."a9f3ab2c1_todos"',
     );
     expect(sql).toContain('"label" text not null');
     expect(sql).toContain('"done" boolean');
@@ -33,20 +33,20 @@ describe("createTableSql", () => {
     expect(sql).toContain("created_at timestamptz default now()");
     expect(sql).toContain("enable row level security");
     expect(sql).toContain(
-      'create policy "a448bb2af_todos_all" on public."a448bb2af_todos" for all to anon, authenticated using (true) with check (true)',
+      'create policy "a9f3ab2c1_todos_all" on public."a9f3ab2c1_todos" for all to anon, authenticated using (true) with check (true)',
     );
   });
 
   it("rejects identifiers that could break out of the SQL string", () => {
     expect(() =>
-      createTableSql(projectId, {
+      createTableSql(prefix, {
         // biome-ignore lint/suspicious/noExplicitAny: injection probe
         table: 'todos"; drop table users; --' as any,
         columns: [{ name: "label", type: "text" }],
       }),
     ).toThrow();
     expect(() =>
-      createTableSql(projectId, {
+      createTableSql(prefix, {
         table: "todos",
         columns: [
           // biome-ignore lint/suspicious/noExplicitAny: injection probe
@@ -58,7 +58,7 @@ describe("createTableSql", () => {
 
   it("rejects column types outside the allowlist", () => {
     expect(() =>
-      createTableSql(projectId, {
+      createTableSql(prefix, {
         table: "todos",
         // biome-ignore lint/suspicious/noExplicitAny: allowlist probe
         columns: [{ name: "payload", type: "bytea" as any }],
@@ -68,13 +68,13 @@ describe("createTableSql", () => {
 
   it("rejects uppercase and leading-digit identifiers", () => {
     expect(() =>
-      createTableSql(projectId, {
+      createTableSql(prefix, {
         table: "Todos",
         columns: [{ name: "label", type: "text" }],
       }),
     ).toThrow();
     expect(() =>
-      createTableSql(projectId, {
+      createTableSql(prefix, {
         table: "1todos",
         columns: [{ name: "label", type: "text" }],
       }),
