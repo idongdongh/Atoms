@@ -30,6 +30,7 @@ import {
 } from "@atoms/workspace-sdk";
 import Fastify, {
   type FastifyInstance,
+  type FastifyReply,
   type FastifyRequest,
 } from "fastify";
 
@@ -192,7 +193,8 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
     const isPublicPath =
       path === "/health" ||
       path.startsWith("/auth/") ||
-      path.startsWith("/published/");
+      path.startsWith("/published/") ||
+      path.startsWith("/p/");
     if (!isPublicPath && !requestUsers.has(request)) {
       reply.code(401);
       return reply.send({
@@ -439,13 +441,17 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       if (!findOwnedProject(request, request.params.projectId)) {
         return notFound(reply);
       }
-      let preview: ProjectPreview | null;
-      preview = store.getProjectPreview(request.params.projectId);
-      // The preview child only listens on 127.0.0.1; the browser-facing URL
-      // is the API proxy route, derived from the requesting host.
+      const preview = store.getProjectPreview(request.params.projectId);
+      // The preview child listens on 127.0.0.1 only. Locally the browser can
+      // reach it directly (cross-origin, no shared cookies with the builder).
+      // In production ATOMS_PREVIEW_PUBLIC_ORIGIN points at a dedicated
+      // preview origin that reverse-proxies to the public /p/ route.
+      const publicOrigin = process.env.ATOMS_PREVIEW_PUBLIC_ORIGIN;
       const publicUrl =
         preview?.status === "running" && preview.port
-          ? `${request.protocol}://${request.headers.host}/api/projects/${request.params.projectId}/preview/proxy/`
+          ? publicOrigin
+            ? `${publicOrigin.replace(/\/$/, "")}/p/${request.params.projectId}/`
+            : `http://127.0.0.1:${preview.port}/`
           : null;
       return {
         preview: preview
@@ -455,46 +461,101 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
     },
   );
 
+  const servePreviewProxy = (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    projectId: string,
+    routePrefix: string,
+  ): void => {
+    const preview = store.getProjectPreview(projectId);
+    if (!preview || preview.status !== "running" || !preview.port) {
+      reply.code(503);
+      void reply.send({
+        error: "preview_unavailable",
+        message: "Preview is not running",
+      });
+      return;
+    }
+    const prefixIndex = request.url.indexOf(routePrefix);
+    const tailPath =
+      prefixIndex === -1
+        ? "/"
+        : request.url.slice(prefixIndex + routePrefix.length) || "/";
+    const basePath = `${routePrefix}/`;
+    const headers = { ...request.headers };
+    delete headers.host;
+    delete headers.connection;
+    headers.host = `127.0.0.1:${preview.port}`;
+    reply.hijack();
+    const upstream = http.request(
+      `http://127.0.0.1:${preview.port}${tailPath}`,
+      { method: request.method, headers },
+      (upstreamResponse) => {
+        const responseHeaders = { ...upstreamResponse.headers };
+        const contentType = String(responseHeaders["content-type"] ?? "");
+        if (!contentType.includes("text/html")) {
+          reply.raw.writeHead(
+            upstreamResponse.statusCode ?? 502,
+            responseHeaders,
+          );
+          upstreamResponse.pipe(reply.raw);
+          return;
+        }
+        // The dev server emits root-relative asset URLs; a <base> tag keeps
+        // them under this proxy prefix instead of the proxying origin.
+        const chunks: Buffer[] = [];
+        upstreamResponse.on("data", (chunk: Buffer) => chunks.push(chunk));
+        upstreamResponse.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          const injected = body.includes("<base ")
+            ? body
+            : body.replace(
+                /<head([^>]*)>/i,
+                `<head$1><base href="${basePath}" />`,
+              );
+          delete responseHeaders["content-length"];
+          delete responseHeaders["transfer-encoding"];
+          reply.raw.writeHead(
+            upstreamResponse.statusCode ?? 502,
+            responseHeaders,
+          );
+          reply.raw.end(injected);
+        });
+      },
+    );
+    upstream.on("error", () => {
+      if (!reply.raw.headersSent) {
+        reply.raw.writeHead(502, { "content-type": "text/plain" });
+      }
+      reply.raw.end("Preview upstream is unreachable");
+    });
+    request.raw.pipe(upstream);
+  };
+
   app.get<{ Params: { projectId: string } }>(
     "/projects/:projectId/preview/proxy/*",
     async (request, reply) => {
       if (!findOwnedProject(request, request.params.projectId)) {
         return notFound(reply);
       }
-      const preview = store.getProjectPreview(request.params.projectId);
-      if (!preview || preview.status !== "running" || !preview.port) {
-        reply.code(503);
-        return { error: "preview_unavailable", message: "Preview is not running" };
-      }
-      const marker = "/preview/proxy/";
-      const markerIndex = request.url.indexOf(marker);
-      const tailPath =
-        markerIndex === -1
-          ? "/"
-          : request.url.slice(markerIndex + marker.length - 1);
-      const headers = { ...request.headers };
-      delete headers.host;
-      delete headers.connection;
-      headers.host = `127.0.0.1:${preview.port}`;
-      reply.hijack();
-      const upstream = http.request(
-        `http://127.0.0.1:${preview.port}${tailPath}`,
-        { method: request.method, headers },
-        (upstreamResponse) => {
-          reply.raw.writeHead(
-            upstreamResponse.statusCode ?? 502,
-            upstreamResponse.headers,
-          );
-          upstreamResponse.pipe(reply.raw);
-        },
+      servePreviewProxy(
+        request,
+        reply,
+        request.params.projectId,
+        `/projects/${request.params.projectId}/preview/proxy`,
       );
-      upstream.on("error", () => {
-        if (!reply.raw.headersSent) {
-          reply.raw.writeHead(502, { "content-type": "text/plain" });
-        }
-        reply.raw.end("Preview upstream is unreachable");
-      });
-      request.raw.pipe(upstream);
+    },
+  );
+
+  app.get<{ Params: { projectId: string } }>(
+    "/p/:projectId/*",
+    async (request, reply) => {
+      servePreviewProxy(
+        request,
+        reply,
+        request.params.projectId,
+        `/p/${request.params.projectId}`,
+      );
     },
   );
 

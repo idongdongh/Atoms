@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   AgentEvent,
   AgentRun,
@@ -107,6 +107,10 @@ export function App() {
   const [releases, setReleases] = useState<ProjectRelease[]>([]);
   const [publication, setPublication] = useState<PublicationView | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [rightTab, setRightTab] = useState<"preview" | "files" | "code">(
+    "preview",
+  );
+  const feedRef = useRef<HTMLDivElement | null>(null);
   const [activeFile, setActiveFile] = useState<FileContent | null>(null);
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
   const [name, setName] = useState("");
@@ -118,6 +122,11 @@ export function App() {
 
   const selected =
     projects.find((project) => project.id === selectedId) ?? null;
+
+  useEffect(() => {
+    const feed = feedRef.current;
+    if (feed) feed.scrollTop = feed.scrollHeight;
+  }, [messages, events]);
 
   useEffect(() => {
     void requestJson<{ user: User }>("/api/auth/me")
@@ -312,6 +321,7 @@ export function App() {
         `/api/projects/${selectedId}/files/content?path=${encodeURIComponent(filePath)}`,
       );
       setActiveFile(file);
+      setRightTab("code");
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "文件读取失败");
@@ -614,13 +624,8 @@ export function App() {
             ))}
           </nav>
         </aside>
-        <section className="editor-panel" aria-label="项目工作区">
-          {error && (
-            <div className="error-banner" role="alert">
-              {error}
-            </div>
-          )}
-          {!selected ? (
+        {!selected ? (
+          <section className="editor-panel welcome-wrap" aria-label="项目工作区">
             <div className="welcome-state">
               <p className="eyebrow">AI application workspace</p>
               <h1>
@@ -631,11 +636,13 @@ export function App() {
                 历史。向 Agent 描述需求，观察真实的文件变更、版本与预览，然后一键发布。
               </p>
             </div>
-          ) : (
-            <>
-              <header className="project-header">
+          </section>
+        ) : (
+          <>
+            <section className="chat-panel" aria-label="Agent 对话">
+              <header className="chat-header">
                 <div>
-                  <p className="eyebrow">Project workspace</p>
+                  <p className="eyebrow">Project</p>
                   <h1>{selected.name}</h1>
                 </div>
                 <span className="status">
@@ -647,56 +654,218 @@ export function App() {
                       : "Ready"}
                 </span>
               </header>
-              <div className="editor-grid">
-                <aside className="file-browser" aria-label="项目文件">
-                  <div className="panel-title">Files</div>
-                  {files.map((file) => (
-                    <button
-                      className={
-                        activeFile?.path === file.path ? "file active" : "file"
-                      }
-                      key={file.path}
-                      onClick={() =>
-                        file.kind === "file"
-                          ? void openFile(file.path)
-                          : undefined
-                      }
-                      disabled={file.kind === "directory"}
-                      type="button"
-                    >
-                      <span aria-hidden="true">
-                        {file.kind === "directory" ? "▸" : "·"}
-                      </span>
-                      {file.path}
-                    </button>
-                  ))}
-                </aside>
-                <section className="code-view" aria-label="文件内容">
-                  <div className="panel-title">
-                    {activeFile?.path ?? "Select a file"}
+              <div className="chat-feed" ref={feedRef}>
+                {messages.length === 0 && events.length === 0 && (
+                  <div className="chat-empty">
+                    <p className="eyebrow">Prompt</p>
+                    <p className="muted">
+                      告诉 Agent 你想构建什么，例如"做一个任务管理面板"，或对现有应用说"增加深色模式"。
+                    </p>
                   </div>
-                  {activeFile ? (
-                    <pre tabIndex={0}>
+                )}
+                {messages.map((message) => (
+                  <div
+                    className={
+                      message.role === "user"
+                        ? "chat-bubble user"
+                        : "chat-bubble agent"
+                    }
+                    key={message.id}
+                  >
+                    <span>{message.role === "user" ? "You" : "Agent"}</span>
+                    <p>{message.content}</p>
+                  </div>
+                ))}
+                {events.slice(-12).map((event) => (
+                  <div
+                    className={`activity-item ${event.type.includes("failed") ? "failed" : ""}`}
+                    key={`${event.runId}-${event.sequence}`}
+                  >
+                    <span>{event.type}</span>
+                    <p>{eventLabel(event)}</p>
+                  </div>
+                ))}
+              </div>
+              {error && (
+                <div className="error-banner" role="alert">
+                  {error}
+                </div>
+              )}
+              <form className="agent-box" onSubmit={sendPrompt}>
+                <label htmlFor="agent-prompt">告诉 Agent 你想构建什么</label>
+                <textarea
+                  id="agent-prompt"
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder="例如：做一个任务管理面板，支持增删和标记完成"
+                  disabled={!selected || !!sending}
+                />
+                <div className="agent-actions">
+                  <button
+                    type="submit"
+                    disabled={!selected || !prompt.trim() || !!sending}
+                  >
+                    {sending ? "执行中…" : "发送"}
+                  </button>
+                  {running && (
+                    <button type="button" onClick={() => void cancelRun()}>
+                      取消
+                    </button>
+                  )}
+                </div>
+              </form>
+            </section>
+            <section className="preview-panel" aria-label="预览、代码与发布">
+              <div className="preview-tabs" role="tablist" aria-label="右侧视图">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={rightTab === "preview"}
+                  className={rightTab === "preview" ? "tab active" : "tab"}
+                  onClick={() => setRightTab("preview")}
+                >
+                  预览
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={rightTab === "files"}
+                  className={rightTab === "files" ? "tab active" : "tab"}
+                  onClick={() => setRightTab("files")}
+                >
+                  文件
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={rightTab === "code"}
+                  className={rightTab === "code" ? "tab active" : "tab"}
+                  onClick={() => setRightTab("code")}
+                >
+                  代码
+                </button>
+                {publication?.baseUrl && (
+                  <a
+                    className="tab-link"
+                    href={publication.baseUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    已发布 ↗
+                  </a>
+                )}
+              </div>
+              <div className="preview-body">
+                {rightTab === "preview" &&
+                  (preview?.url ? (
+                    <iframe
+                      className="preview-frame"
+                      title="项目 Preview"
+                      key={selected.currentCommit}
+                      src={preview.url}
+                    />
+                  ) : (
+                    <div className="preview-empty">
+                      <span className="preview-icon" aria-hidden="true">
+                        ↗
+                      </span>
+                      <strong>
+                        {preview?.status === "failed"
+                          ? "Preview 启动失败"
+                          : "预览服务尚未连接"}
+                      </strong>
+                      <p>
+                        {preview?.errorMessage ??
+                          "提交需求后，Agent 完成修改，这里会显示实际运行结果。"}
+                      </p>
+                    </div>
+                  ))}
+                {rightTab === "files" && (
+                  <div className="file-browser full" aria-label="项目文件">
+                    {files.map((file) => (
+                      <button
+                        className={
+                          activeFile?.path === file.path
+                            ? "file active"
+                            : "file"
+                        }
+                        key={file.path}
+                        onClick={() =>
+                          file.kind === "file"
+                            ? void openFile(file.path)
+                            : undefined
+                        }
+                        disabled={file.kind === "directory"}
+                        type="button"
+                      >
+                        <span aria-hidden="true">
+                          {file.kind === "directory" ? "▸" : "·"}
+                        </span>
+                        {file.path}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {rightTab === "code" &&
+                  (activeFile ? (
+                    <pre className="code-full" tabIndex={0}>
                       <code>{activeFile.content}</code>
                     </pre>
                   ) : (
-                    <div className="code-empty">从左侧选择文件查看内容</div>
-                  )}
-                </section>
+                    <div className="code-empty">在"文件"标签选择一个文件查看内容</div>
+                  ))}
               </div>
-              <section className="version-strip" aria-label="版本历史">
-                <div>
-                  <strong>Version history</strong>
-                  <span>
-                    {versions.length} 个可恢复版本 · current{" "}
-                    {selected.currentCommit.slice(0, 12)}
-                  </span>
+              <div className="publish-bar">
+                <div className="publish-actions">
+                  <button
+                    type="button"
+                    disabled={publishing || !!running}
+                    onClick={() => void publishProject()}
+                  >
+                    {publishing ? "构建中…" : "发布"}
+                  </button>
+                  {publication?.baseUrl ? (
+                    <a
+                      className="publish-url"
+                      href={publication.baseUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {publication.baseUrl}
+                    </a>
+                  ) : (
+                    <span className="muted">发布后获得公网链接</span>
+                  )}
                 </div>
-                <div className="version-list">
-                  {versions.slice(0, 4).map((version) => (
+                {releases.length > 0 && (
+                  <div className="chip-row">
+                    {releases.slice(0, 4).map((release) => (
+                      <button
+                        key={release.id}
+                        type="button"
+                        className="chip"
+                        disabled={
+                          release.status !== "ready" ||
+                          release.id === publication?.currentReleaseId
+                        }
+                        onClick={() => void activateRelease(release)}
+                        title={release.errorMessage ?? release.commitHash}
+                      >
+                        {release.createdAt.slice(5, 16).replace("T", " ")}
+                        {release.id === publication?.currentReleaseId
+                          ? " · 当前"
+                          : ""}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="chip-row">
+                  <span className="muted">版本</span>
+                  {versions.slice(0, 5).map((version) => (
                     <button
                       key={version.id}
                       type="button"
+                      className="chip"
                       disabled={version.commitHash === selected.currentCommit}
                       onClick={() => void restoreVersion(version)}
                       title={version.message}
@@ -705,137 +874,10 @@ export function App() {
                     </button>
                   ))}
                 </div>
-              </section>
-            </>
-          )}
-        </section>
-        <aside className="preview-panel" aria-label="预览与 Agent">
-          <div className="panel-title">Preview</div>
-          {preview?.url ? (
-            <iframe
-              className="preview-frame"
-              title="项目 Preview"
-              key={selected?.currentCommit ?? "none"}
-              src={preview.url}
-            />
-          ) : (
-            <div className="preview-empty">
-              <span className="preview-icon" aria-hidden="true">
-                ↗
-              </span>
-              <strong>
-                {preview?.status === "failed"
-                  ? "Preview 启动失败"
-                  : "预览服务尚未连接"}
-              </strong>
-              <p>
-                {preview?.errorMessage ??
-                  "配置本地 Demo provider 或远程 Sandbox 后，这里会显示实际运行结果。"}
-              </p>
-            </div>
-          )}
-          <section className="activity" aria-label="发布">
-            <div className="panel-title">发布</div>
-            <div className="activity-list">
-              <div className="message-item">
-                <span>Public URL</span>
-                {publication?.baseUrl ? (
-                  <p>
-                    <a href={publication.baseUrl} target="_blank" rel="noreferrer">
-                      {publication.baseUrl}
-                    </a>
-                  </p>
-                ) : (
-                  <p>尚未发布。发布后应用可通过公网链接访问。</p>
-                )}
               </div>
-              <div className="agent-actions">
-                <button
-                  type="button"
-                  disabled={!selected || publishing || !!running}
-                  onClick={() => void publishProject()}
-                >
-                  {publishing ? "构建中…" : "发布当前版本"}
-                </button>
-              </div>
-              {releases.length > 0 && (
-                <div className="message-item">
-                  <span>Releases</span>
-                  {releases.slice(0, 4).map((release) => (
-                    <button
-                      key={release.id}
-                      type="button"
-                      disabled={
-                        release.status !== "ready" ||
-                        release.id === publication?.currentReleaseId
-                      }
-                      onClick={() => void activateRelease(release)}
-                      title={release.errorMessage ?? release.commitHash}
-                    >
-                      {release.createdAt.slice(0, 19).replace("T", " ")} ·{" "}
-                      {release.status}
-                      {release.id === publication?.currentReleaseId
-                        ? " · 当前"
-                        : ""}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-          <section className="activity" aria-label="Agent 活动">
-            <div className="panel-title">Agent activity</div>
-            <div className="activity-list">
-              {events.length === 0 && messages.length === 0 && (
-                <p className="muted">
-                  提交需求后，这里会显示工具调用和版本事件。
-                </p>
-              )}
-              {events.slice(-8).map((event) => (
-                <div
-                  className={`activity-item ${event.type.includes("failed") ? "failed" : ""}`}
-                  key={`${event.runId}-${event.sequence}`}
-                >
-                  <span>{event.type}</span>
-                  <p>{eventLabel(event)}</p>
-                </div>
-              ))}
-              {messages.slice(-3).map((message) => (
-                <div className="message-item" key={message.id}>
-                  <span>{message.role === "user" ? "You" : "Agent"}</span>
-                  <p>{message.content}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-          <form className="agent-box" onSubmit={sendPrompt}>
-            <label htmlFor="agent-prompt">告诉 Agent 你想构建什么</label>
-            <textarea
-              id="agent-prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder={
-                selected
-                  ? "例如：把启动页改成一个任务管理面板"
-                  : "先创建一个项目"
-              }
-              disabled={!selected || !!sending}
-            />
-            <div className="agent-actions">
-              <button
-                type="submit"
-                disabled={!selected || !prompt.trim() || !!sending}
-              >
-                {sending ? "执行中…" : "发送"}
-              </button>
-              {running && (
-                <button type="button" onClick={() => void cancelRun()}>
-                  取消
-                </button>
-              )}
-            </div>
-          </form>
-        </aside>
+            </section>
+          </>
+        )}
       </div>
     </main>
   );
