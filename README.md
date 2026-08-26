@@ -1,83 +1,75 @@
 # Atoms
 
-Atoms 是一个面向 Web 的 AI 应用生成平台。用户通过自然语言描述需求，Agent 在隔离工作区中读取、生成和修改代码，并将运行结果以实时网页 Preview 的形式展示。
+**用一句话描述想法，Agent 在隔离工作区里把它变成可运行、可发布的应用。**
 
-产品体验参考 Dyad，但本项目从一开始按多用户 Web 系统设计，将控制面、项目工作区和用户代码执行环境分离。
+在线体验：<http://119.28.133.244>（演示账号 `demo@atoms.test` / `demo-password`）· 笔试交付说明：[SUBMISSION.md](SUBMISSION.md)
 
-## 当前状态
+![演示：主页输入想法，Agent 生成应用](assets/demo.gif)
 
-第一阶段 Builder 内核已交付并通过对抗式审查加固：Monorepo 与三平面骨架（Web/API/Worker）、运行时 Contract 与状态机、SQLite 元数据与可重放事件流、本地 Git Workspace、结构化工具 Agent 主链（每轮自动 commit、非破坏性回滚）、预览网关与账号会话隔离均已可用；`pnpm check`（格式/类型/测试/构建）全绿。
+产品体验参考 [Atoms](https://atoms.dev) / [Dyad](https://dyad.sh)，但按多用户 Web 系统重新设计：控制面、工作区、执行面三平面分离，契约先行（Zod 运行时校验），Git 是代码事实来源，数据库只存元数据。
 
-第二阶段 Demo 轨道已交付：自有路径发布与秒级回退、Dyad 前端移植（Manus 主题）、预览生命周期加固（空闲回收、失败重试、打开即唤醒），以及 Docker Compose + Caddy 部署产物。剩余：Supabase 全栈生成（M-B1，等凭据）与线上部署验收。笔试评估请先读 [SUBMISSION.md](SUBMISSION.md)，部署见 [docs/deployment.md](docs/deployment.md)。
+## 核心能力
 
-当前 SQLite、Demo Model 和 Local Development Sandbox 只用于本地开发与 Contract 验证。真实远程隔离 Sandbox、PostgreSQL/持久队列、GitHub 同步和托管数据库接入仍未完成；Demo 部署形态与企业级演进路径见 [ADR 0005](docs/adr/0005-demo-runtime-topology.md) 与 [ADR 0006](docs/adr/0006-generated-app-data-and-publish.md)。
+| 能力       | 说明                                                                                                        |
+| ---------- | ----------------------------------------------------------------------------------------------------------- |
+| 对话式生成 | 自然语言 → Agent 经 8 个结构化工具（Zod 双端校验）读写工作区，SSE 实时事件流，每轮成功自动形成 Git 版本     |
+| 全栈生成   | 一句话生成带数据库 CRUD 的应用：Agent 受控建表（标识符/类型白名单 + 行级安全），前端 anon key 直连 Supabase |
+| 实时预览   | dev server 受控子进程，`/p/<id>/` 公开网关访问；空闲 10 分钟自动回收，打开即唤醒                            |
+| 发布与回退 | 受控 `vite build` → 不可变 release → 激活指针原子切换，任意历史版本一键秒级回退                             |
+| 多用户隔离 | scrypt 口令 + 会话 Cookie，全部资源按账号过滤，写操作要求客户端头                                           |
 
-第一阶段目标是完成 Builder 内核：
+![工作台：对话、实时事件与运行中的预览](assets/workspace.png)
 
-1. 创建项目与初始化模板。
-2. 通过 Chat 驱动 Agent 修改代码。
-3. 在远程 Sandbox 中安装依赖并运行项目。
-4. 在浏览器中实时预览和查看日志。
-5. 自动生成 Git 版本，支持继续修改和安全回滚。
+## 架构
 
-详细范围、里程碑和验收标准见 [第一阶段开发计划](docs/phase-1-development-plan.md)。
+单机 Demo 拓扑（企业级演进路径见 [ADR 0005](docs/adr/0005-demo-runtime-topology.md)）：
 
-第二阶段将在第一阶段验收完成后，把闭环扩展到官方全栈模板、托管数据库、GitHub 同步和生产发布。规划见 [第二阶段开发计划](docs/phase-2-development-plan.md)。
+```mermaid
+flowchart LR
+    B["浏览器 · Dyad 风格 SPA"] -->|"/api"| CA["Caddy<br/>静态 SPA + 反代"]
+    B -->|"/p/&lt;id&gt;/ 预览"| CA
+    B -->|"/published/&lt;id&gt;/"| CA
+    CA --> API["API · Control Plane<br/>Fastify + SQLite"]
+    CA --> WK["Agent Worker · Execution Plane<br/>结构化工具循环"]
+    API <-->|"SQLite WAL · 唤醒标志"| WK
+    WK -->|"受控子进程 + 环境白名单"| PV["Preview dev server"]
+    WK -->|"受控构建"| RL["不可变 Releases"]
+    WK -->|"service_role（仅 DDL 白名单）"| SB[("Supabase<br/>生成应用数据")]
+    WK -.->|"OpenAI 兼容 API"| LLM["DeepSeek"]
+    PV --> SB
+```
 
-## 快速开始
+关键决策都有对应的 ADR 与取舍说明：[docs/adr/](docs/adr/)。安全设计（sandbox 边界、密钥隔离、RLS、CSRF 防护）与已知取舍见 [SUBMISSION.md](SUBMISSION.md)。
 
-环境要求：Node.js 24 或更高版本、pnpm 10。
+## 快速开始（90 秒）
 
 ```bash
+git clone https://github.com/idongdongh/Atoms.git && cd Atoms
 pnpm install
-pnpm dev
+pnpm dev     # API :3000 + Web :5173 + Worker（离线 demo 模型，无需任何密钥）
 ```
 
-- Web：`http://localhost:5173`
-- API 健康检查：`http://localhost:3000/health`
+打开 <http://localhost:5173>，注册后描述一个想法即可（API 健康检查：`http://localhost:3000/health`）。接入真实模型与数据库只需在 `.env` 填三组环境变量（模板见 `.env.example`）；生产部署（Docker Compose + Caddy）见 [docs/deployment.md](docs/deployment.md)。
 
-默认开发命令显式使用 `ATOMS_MODEL_PROVIDER=demo` 和本地 Preview Provider，便于离线演示；接入真实模型时设置 `ATOMS_MODEL_API_KEY`，可选 `ATOMS_MODEL_BASE_URL` 和 `ATOMS_MODEL_NAME`。本地 Preview 只用于开发，不是生产 Sandbox。
-
-开发前请先阅读：
-
-- [项目协作规则](AGENTS.md)
-- [文档目录说明](docs/README.md)
-- [第一阶段开发计划](docs/phase-1-development-plan.md)
-- [第二阶段开发计划](docs/phase-2-development-plan.md)
-- [笔试交付说明](SUBMISSION.md) / [部署手册](docs/deployment.md)
-
-## 目录结构
+## 仓库结构
 
 ```text
-Atoms/
-├── AGENTS.md                         # AI 开发助手的项目约束
-├── PRODUCT.md                        # 产品用户、体验原则与无障碍基线
-├── README.md                         # 项目定位、状态与目录说明
-├── SUBMISSION.md                     # 笔试交付说明（思路/取舍/完成度）
-├── Dockerfile                        # 多阶段构建（runtime 应用 + web 静态）
-├── docker-compose.yml                # atoms + caddy 两服务编排
-├── Caddyfile                         # 反向代理、自动 HTTPS、SSE 不缓冲
-├── docker-entrypoint.sh              # 容器内同时运行 API 与 Worker
-├── .env.example                      # 环境变量清单（密钥只进 .env）
-├── package.json                      # Monorepo 命令与统一开发依赖
-├── pnpm-workspace.yaml               # pnpm 工作区定义
-├── tsconfig.base.json                # 共享 TypeScript 严格配置
-├── apps/                             # 可独立启动和部署的应用
-│   ├── web/                          # React + Vite Builder 前端
-│   ├── api/                          # Fastify Control Plane API
-│   └── agent-worker/                 # 后台 Agent Run Worker
-├── packages/                         # 跨运行单元共享的领域内核
-│   ├── contracts/                    # Zod 协议与状态机
-│   ├── db/                           # 本地持久层与可替换存储边界
-│   ├── workspace-sdk/                # Workspace 接口、Git 实现与安全边界
-│   └── sandbox-sdk/                  # Sandbox 接口与受控本地实现
-├── templates/
-│   └── react-vite/                   # 生成应用的起步模板
-├── docs/                             # 架构、计划和开发文档
-│   ├── README.md                     # 文档目录维护约定
-│   ├── adr/                          # 架构决策记录
-│   ├── phase-1-development-plan.md   # Builder 内核第一阶段开发计划
-│   ├── phase-2-development-plan.md   # 全栈交付与生产发布第二阶段开发计划
-│   └── deployment.md                 # 笔试 Demo 生产部署手册
-└── dyad/                             # 本地参考仓库，已忽略，不属于项目交付物
+apps/api            Control Plane：HTTP API、预览/发布网关、会话与多用户隔离
+apps/agent-worker   Execution Plane：Agent 运行器、结构化工具、预览生命周期
+apps/web            构建器前端（Dyad 前端移植，MIT 署名，Manus 暖纸主题）
+packages/contracts  全部共享契约（Zod Schema，运行时校验）
+packages/db         平台元数据存储（node:sqlite, WAL）
+packages/workspace-sdk   工作区 Git 操作、写锁、模板实例化
+packages/sandbox-sdk     受控子进程 Provider（预览 dev server、受控构建）
+templates/react-vite     生成应用的起步模板（含 Supabase client）
+docs/               ADR、开发计划、部署手册
 ```
+
+## 工程实践
+
+- `pnpm check` = 格式 + 类型 + **70 个单元/集成测试** + 构建，全部通过
+- 两轮对抗式审查（并发、安全、部署链路）的发现与修复记录在 Git 历史
+- 长任务事件持久化、按序列号可重放，SSE 断线用 `Last-Event-ID` 续传
+- 每项目同一时刻最多一个写入 Run（claim 事务），所有写请求带幂等键
+
+更多文档：[SUBMISSION.md](SUBMISSION.md)（交付说明）· [docs/README.md](docs/README.md)（文档索引）· [AGENTS.md](AGENTS.md)（协作规则）
