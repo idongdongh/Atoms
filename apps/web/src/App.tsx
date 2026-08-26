@@ -623,10 +623,12 @@ export function App() {
           {!selected ? (
             <div className="welcome-state">
               <p className="eyebrow">AI application workspace</p>
-              <h1>从一个真实、可版本化的项目开始</h1>
+              <h1>
+                把想法变成<span className="accent-word">可运行的产品</span>
+              </h1>
               <p>
                 创建项目会初始化固定 React 模板和 Git
-                历史。选择项目后，可以直接向 Agent 描述需求并查看真实文件变更。
+                历史。向 Agent 描述需求，观察真实的文件变更、版本与预览，然后一键发布。
               </p>
             </div>
           ) : (
