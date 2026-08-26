@@ -72,6 +72,21 @@ function randomId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+function failureText(run: AgentRun): string {
+  switch (run.errorCode) {
+    case "max_steps":
+      return "Agent 达到了工具调用步数上限，任务太大了——可以拆成两条消息发，或直接重试";
+    case "run_timeout":
+      return "这次生成超过了时间预算被中止，直接重试通常就能完成";
+    case "no_changes":
+      return "Agent 没有产生任何修改";
+    case "worker_interrupted":
+      return "服务重启打断了这次生成，请重试";
+    default:
+      return `生成失败：${run.errorMessage ?? run.errorCode ?? "未知错误"}`;
+  }
+}
+
 function QrCard({ url }: { url: string }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -510,6 +525,34 @@ export function App() {
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "文件读取失败");
+    }
+  }
+
+  // Re-run the last user prompt of the selected chat with a fresh
+  // idempotency key; used by the failure card's retry button.
+  async function retryLastPrompt() {
+    if (!selected || sending) return;
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    setSending(true);
+    setEvents([]);
+    setError(null);
+    try {
+      const { run } = await requestJson<{ run: AgentRun }>(
+        `/api/chats/${selected.chatId}/runs`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            prompt: lastUser.content,
+            idempotencyKey: randomId(),
+          }),
+        },
+      );
+      setActiveRun(run);
+    } catch (cause) {
+      setSending(false);
+      setError(cause instanceof Error ? cause.message : "重试失败");
     }
   }
 
@@ -1289,6 +1332,23 @@ export function App() {
                           );
                         });
                       })()}
+                      {activeRun?.status === "failed" && (
+                        <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2.5">
+                          <p className="text-sm font-medium text-destructive">
+                            {failureText(activeRun)}
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+                            disabled={sending}
+                            onClick={() => void retryLastPrompt()}
+                          >
+                            <RefreshCw className="size-3.5" />
+                            重试这条消息
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
