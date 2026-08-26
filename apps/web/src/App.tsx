@@ -209,7 +209,9 @@ export function App() {
     void requestJson<{ projects: Project[] }>("/api/projects")
       .then(({ projects: loaded }) => {
         setProjects(loaded);
-        setSelectedId(loaded[0]?.id ?? null);
+        // Land on the home screen like Dyad's "/" route; selecting a project
+        // from the sidebar opens its chat page.
+        setSelectedId(null);
         setState("ready");
       })
       .catch((cause: unknown) => {
