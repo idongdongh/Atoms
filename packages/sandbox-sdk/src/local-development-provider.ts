@@ -94,6 +94,9 @@ export class LocalDevelopmentSandboxProvider implements PreviewProvider {
         "--ignore-scripts",
         "--no-frozen-lockfile",
         "--prefer-offline",
+        // Registry mirror keeps dependency resolution off the slow path when
+        // registry.npmjs.org is flaky from the host region.
+        "--registry=https://registry.npmmirror.com",
         ...(process.env.ATOMS_PREVIEW_OFFLINE === "true" ? ["--offline"] : []),
       ];
       await runCommand("pnpm", installArgs, input.workspaceRoot);
