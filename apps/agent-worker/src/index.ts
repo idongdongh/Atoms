@@ -63,6 +63,7 @@ async function startWorker(): Promise<void> {
       message: "The worker stopped before the run completed",
     });
   }
+  store.resetRunningProjectPreviews();
   const pollMs = Number(process.env.ATOMS_WORKER_POLL_MS ?? 300);
   const previewIdleMs = Number(process.env.ATOMS_PREVIEW_IDLE_MS ?? 600_000);
   const reconcileIntervalMs = 2_000;

@@ -1022,6 +1022,18 @@ export class ControlPlaneStore {
     return row !== undefined;
   }
 
+  // Preview dev servers die with their host process; after a restart every
+  // "running" row is stale by definition. Resetting them to stopped lets the
+  // next view wake them instead of serving 502s until the idle reaper runs.
+  resetRunningProjectPreviews(): number {
+    const result = this.#database
+      .prepare(
+        "UPDATE project_previews SET status = 'stopped', url = NULL, port = NULL WHERE status = 'running'",
+      )
+      .run();
+    return result.changes;
+  }
+
   createRelease(input: {
     id: string;
     projectId: string;
