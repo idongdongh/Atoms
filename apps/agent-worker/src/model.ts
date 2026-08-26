@@ -151,8 +151,9 @@ export class DemoModel implements AgentModel {
       };
     }
     const prompt =
-      input.messages.find((message) => message.role === "user")?.content ??
-      "你的产品";
+      input.messages
+        .filter((message) => message.role === "user")
+        .at(-1)?.content ?? "你的产品";
     const writeTool = input.tools.find((tool) => tool.name === "write_file");
     if (!writeTool) throw new Error("write_file tool is not available");
     return {
