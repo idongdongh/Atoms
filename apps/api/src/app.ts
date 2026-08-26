@@ -501,11 +501,18 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       return;
     }
     touchPreviewAccess(projectId);
-    const prefixIndex = request.url.indexOf(routePrefix);
-    const tailPath =
-      prefixIndex === -1
-        ? "/"
-        : request.url.slice(prefixIndex + routePrefix.length) || "/";
+    // The dev server runs with --base=/p/<projectId>/ and strips that prefix
+    // itself, so the public gateway must forward the request path verbatim —
+    // rewriting /p/<id>/x to /x makes vite redirect / back to the base and
+    // the iframe loops. Legacy non-/p/ prefixes keep the strip behaviour.
+    const tailPath = routePrefix.startsWith("/p/")
+      ? request.url
+      : (() => {
+          const prefixIndex = request.url.indexOf(routePrefix);
+          return prefixIndex === -1
+            ? "/"
+            : request.url.slice(prefixIndex + routePrefix.length) || "/";
+        })();
     const basePath = `${routePrefix}/`;
     const headers = { ...request.headers };
     delete headers.host;
