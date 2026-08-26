@@ -314,10 +314,13 @@ export class LocalGitWorkspace implements Workspace {
       throw new Error("Invalid commit hash");
     }
     await runGit(this.root, ["cat-file", "-e", `${commitHash}^{commit}`]);
+    // Untracked files (node_modules from preview installs, build output)
+    // cannot conflict with a checkout, so only tracked modifications make
+    // the workspace "dirty" for restore purposes.
     const status = await runGit(this.root, [
       "status",
       "--porcelain",
-      "--untracked-files=all",
+      "--untracked-files=no",
     ]);
     if (status) {
       throw new Error("Workspace must be clean before restoring a version");

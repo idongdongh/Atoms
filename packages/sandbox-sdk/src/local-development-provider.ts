@@ -92,7 +92,7 @@ export class LocalDevelopmentSandboxProvider implements PreviewProvider {
         "install",
         "--ignore-workspace",
         "--ignore-scripts",
-        "--no-frozen-lockfile",
+        "--frozen-lockfile",
         "--prefer-offline",
         // Registry mirror keeps dependency resolution off the slow path when
         // registry.npmjs.org is flaky from the host region.

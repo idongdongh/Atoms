@@ -156,18 +156,40 @@ describe("LocalGitWorkspace", () => {
     );
   });
 
-  it("refuses to restore over unrelated working tree changes", async () => {
+  it("refuses to restore over modifications to tracked files", async () => {
     const { created, workspaceRoot, workspace } = await fixture();
     await workspace.writeFile("src/main.ts", "export const value = 2;\n");
     await workspace.commit("Update value");
-    await writeFile(path.join(workspaceRoot, "unrelated.txt"), "keep me\n");
+    await workspace.writeFile("src/main.ts", "export const value = 3;\n");
 
     await expect(
       workspace.restore(created.initialCommitHash, "Restore initial version"),
     ).rejects.toThrow("must be clean");
+  });
+
+  it("restores despite untracked files like node_modules", async () => {
+    const { created, workspaceRoot, workspace } = await fixture();
+    await workspace.writeFile("src/main.ts", "export const value = 2;\n");
+    await workspace.commit("Update value");
+    await writeFile(path.join(workspaceRoot, "unrelated.txt"), "keep me\n");
+    await mkdir(path.join(workspaceRoot, "node_modules/pkg"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(workspaceRoot, "node_modules/pkg/index.js"),
+      "// installed\n",
+    );
+
+    await workspace.restore(
+      created.initialCommitHash,
+      "Restore initial version",
+    );
     expect(
       await readFile(path.join(workspaceRoot, "unrelated.txt"), "utf8"),
     ).toBe("keep me\n");
+    expect(
+      await readFile(path.join(workspaceRoot, "src/main.ts"), "utf8"),
+    ).toContain("value = 1");
   });
 });
 
