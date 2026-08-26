@@ -275,7 +275,12 @@ export class ControlPlaneStore {
       mkdirSync(path.dirname(path.resolve(databasePath)), { recursive: true });
     }
     this.#database = new DatabaseSync(databasePath);
-    this.#database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+    // WAL lets the API read while the worker writes, but contended writers
+    // park synchronously on the lock: bound that wait so a stuck writer can
+    // never freeze the caller's event loop for the default timeout.
+    this.#database.exec(
+      "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 2500;",
+    );
     this.#migrate();
   }
 

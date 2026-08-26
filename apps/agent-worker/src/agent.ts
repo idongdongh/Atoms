@@ -269,10 +269,30 @@ export class AgentRunner {
             );
           }
           if (changedPaths.size === 0) {
-            throw new RunFailure(
-              "no_changes",
-              "The agent completed without changing any project files",
-            );
+            if (responseParts.length === 0) {
+              throw new RunFailure(
+                "no_changes",
+                "The agent completed without changing any project files or replying",
+              );
+            }
+            // Conversational turn (e.g. "你好"): the model replied in text
+            // without touching files. Keep the reply, finish the run at the
+            // current commit, and do not add a version or restart preview.
+            this.#store.transitionRun(run.id, "validating");
+            this.#store.transitionRun(run.id, "committing");
+            this.#store.addAssistantMessage({
+              chatId: run.chatId,
+              content: responseParts.join("\n\n"),
+              sourceCommit: run.baseCommit,
+              resultCommit: run.baseCommit,
+              model: run.model,
+              runId: run.id,
+            });
+            this.#store.transitionRun(run.id, "succeeded", {
+              resultCommit: run.baseCommit,
+            });
+            emit({ type: "run.completed", commitHash: run.baseCommit });
+            return;
           }
           if (this.#store.isRunCancelled(run.id)) {
             emit({ type: "run.cancelled" });
