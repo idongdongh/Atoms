@@ -834,9 +834,12 @@ export function App() {
               onClick={() => setSidebarCollapsed(false)}
               aria-label="展开侧栏"
               title="展开侧栏"
-              className="grid size-6 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground"
+              className="group grid size-7 place-items-center rounded-md bg-primary text-primary-foreground"
             >
-              A
+              <span className="col-start-1 row-start-1 text-[13px] font-bold transition-opacity group-hover:opacity-0">
+                A
+              </span>
+              <PanelLeftOpen className="col-start-1 row-start-1 size-4 opacity-0 transition-opacity group-hover:opacity-100" />
             </button>
           ) : (
             <>
