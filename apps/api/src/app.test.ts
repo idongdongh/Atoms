@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -456,5 +456,56 @@ describe("Control Plane API", () => {
     } finally {
       store.close();
     }
+  });
+
+  it("deletes an owned project and its workspace", async () => {
+    const { app, root, session, project } = await fixture();
+    const workspaceDir = path.join(root, "workspaces", project.id);
+    await mkdir(workspaceDir, { recursive: true });
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/projects/${project.id}`,
+      cookies: session,
+      headers: clientHeader,
+    });
+    expect(deleted.statusCode).toBe(200);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/projects",
+      cookies: session,
+    });
+    expect(list.json().projects).toHaveLength(0);
+    await expect(stat(workspaceDir)).rejects.toThrow();
+
+    const gone = await app.inject({
+      method: "DELETE",
+      url: `/projects/${project.id}`,
+      cookies: session,
+      headers: clientHeader,
+    });
+    expect(gone.statusCode).toBe(404);
+  });
+
+  it("refuses deletion while a run is queued", async () => {
+    const { app, session, project } = await fixture();
+    const created = await app.inject({
+      method: "POST",
+      url: `/chats/${project.chatId}/runs`,
+      cookies: session,
+      headers: clientHeader,
+      payload: { prompt: "in flight", idempotencyKey: "delete-guard-1" },
+    });
+    expect(created.statusCode).toBe(202);
+
+    const refused = await app.inject({
+      method: "DELETE",
+      url: `/projects/${project.id}`,
+      cookies: session,
+      headers: clientHeader,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error).toBe("run_in_progress");
   });
 });

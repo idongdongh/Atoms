@@ -1034,6 +1034,65 @@ export class ControlPlaneStore {
     return Number(result.changes);
   }
 
+  projectExists(projectId: string): boolean {
+    return (
+      this.#database
+        .prepare("SELECT 1 FROM projects WHERE id = ?")
+        .get(projectId) !== undefined
+    );
+  }
+
+  // Deletes every row belonging to one project in foreign-key order inside a
+  // single transaction. Callers must ensure no run is active first.
+  deleteProject(projectId: string): void {
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const runIds = (
+        this.#database
+          .prepare("SELECT id FROM agent_runs WHERE project_id = ?")
+          .all(projectId) as { id: string }[]
+      ).map((row) => row.id);
+      for (const runId of runIds) {
+        this.#database
+          .prepare("DELETE FROM tool_calls WHERE run_id = ?")
+          .run(runId);
+        this.#database
+          .prepare("DELETE FROM agent_events WHERE run_id = ?")
+          .run(runId);
+      }
+      this.#database
+        .prepare("DELETE FROM agent_runs WHERE project_id = ?")
+        .run(projectId);
+      this.#database
+        .prepare(
+          "DELETE FROM messages WHERE chat_id IN (SELECT id FROM chats WHERE project_id = ?)",
+        )
+        .run(projectId);
+      this.#database
+        .prepare("DELETE FROM chats WHERE project_id = ?")
+        .run(projectId);
+      this.#database
+        .prepare("DELETE FROM project_publications WHERE project_id = ?")
+        .run(projectId);
+      this.#database
+        .prepare("DELETE FROM project_releases WHERE project_id = ?")
+        .run(projectId);
+      this.#database
+        .prepare("DELETE FROM project_previews WHERE project_id = ?")
+        .run(projectId);
+      this.#database
+        .prepare("DELETE FROM project_versions WHERE project_id = ?")
+        .run(projectId);
+      this.#database
+        .prepare("DELETE FROM projects WHERE id = ?")
+        .run(projectId);
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   createRelease(input: {
     id: string;
     projectId: string;

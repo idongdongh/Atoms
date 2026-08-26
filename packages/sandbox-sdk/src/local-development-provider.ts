@@ -21,6 +21,9 @@ export interface PreviewProvider {
     workspaceRoot: string;
   }): Promise<PreviewProcess>;
   stop(projectId: string): Promise<void>;
+  // Projects this provider currently holds processes for; lets the worker
+  // reap dev servers whose project rows disappeared (e.g. deleted apps).
+  listProjectIds(): string[];
 }
 
 /**
@@ -148,6 +151,10 @@ export class LocalDevelopmentSandboxProvider implements PreviewProvider {
     terminateProcessTree(current.process);
     await once(current.process, "exit").catch(() => undefined);
     this.#processes.delete(projectId);
+  }
+
+  listProjectIds(): string[] {
+    return [...this.#processes.keys()];
   }
 }
 

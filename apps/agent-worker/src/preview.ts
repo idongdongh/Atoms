@@ -112,6 +112,13 @@ export async function reconcileProjectPreviews(input: {
   workspaceRoot: string;
   idleMs: number;
 }): Promise<void> {
+  // Dev servers whose project row vanished (deleted apps) would otherwise
+  // leak: the idle reaper only ever sees rows that still exist.
+  for (const projectId of input.previewProvider.listProjectIds()) {
+    if (!input.store.projectExists(projectId)) {
+      await input.previewProvider.stop(projectId);
+    }
+  }
   const idleBefore = new Date(Date.now() - input.idleMs).toISOString();
   const previews = input.store.listProjectPreviewsForReconcile(idleBefore);
   for (const record of previews) {

@@ -755,6 +755,33 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
     },
   );
 
+  app.delete<{ Params: { projectId: string } }>(
+    "/projects/:projectId",
+    async (request, reply) => {
+      const project = findOwnedProject(request, request.params.projectId);
+      if (!project) return notFound(reply);
+      if (store.hasActiveRun(project.id)) {
+        reply.code(409);
+        return {
+          error: "run_in_progress",
+          message: "Cancel or wait for the active run before deleting",
+        };
+      }
+      store.deleteProject(project.id);
+      // Workspace and published releases are filesystem-only state keyed by
+      // project id; remove them after the metadata transaction committed.
+      await rm(path.join(dataRoot, project.id), {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
+      await rm(path.join(releasesRoot, project.id), {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
+      return { deleted: true };
+    },
+  );
+
   app.post<{ Params: { projectId: string } }>(
     "/projects/:projectId/restore",
     async (request, reply) => {

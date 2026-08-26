@@ -22,6 +22,7 @@ import {
   SendHorizontal,
   Sparkles,
   Square,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -625,6 +626,33 @@ export function App() {
     setState("idle");
   }
 
+  async function deleteProject(project: Project) {
+    if (
+      !window.confirm(
+        `删除应用「${project.name}」？代码版本和发布记录将一并移除。`,
+      )
+    )
+      return;
+    try {
+      await requestJson(`/api/projects/${project.id}`, { method: "DELETE" });
+      setProjects((current) =>
+        current.filter((item) => item.id !== project.id),
+      );
+      if (selectedId === project.id) {
+        setSelectedId(null);
+        setPreview(null);
+        setFiles([]);
+        setVersions([]);
+        setMessages([]);
+        setActiveFile(null);
+        setActiveRun(null);
+        setEvents([]);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "删除失败");
+    }
+  }
+
   if (authUser === undefined) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
@@ -947,37 +975,51 @@ export function App() {
             </p>
           )}
           {projects.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              onClick={() => setSelectedId(project.id)}
-              title={project.name}
-              className={cn(
-                "flex w-full items-center justify-start rounded-md text-left",
-                sidebarCollapsed
-                  ? "justify-center p-2"
-                  : "gap-2 py-2 pl-2 pr-2",
-                project.id === selectedId
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "hover:bg-sidebar-accent/60",
-              )}
-            >
-              <span
-                className="grid size-7 shrink-0 place-items-center rounded-md text-[10px] font-semibold"
-                style={avatarStyle(project.id)}
-                aria-hidden="true"
+            <div key={project.id} className="group relative">
+              <button
+                type="button"
+                onClick={() => setSelectedId(project.id)}
+                title={project.name}
+                className={cn(
+                  "flex w-full items-center justify-start rounded-md text-left",
+                  sidebarCollapsed
+                    ? "justify-center p-2"
+                    : "gap-2 py-2 pl-2 pr-8",
+                  project.id === selectedId
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "hover:bg-sidebar-accent/60",
+                )}
               >
-                {initials(project.name)}
-              </span>
-              {!sidebarCollapsed && (
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm">{project.name}</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {project.currentCommit.slice(0, 7)}
-                  </span>
+                <span
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-[10px] font-semibold"
+                  style={avatarStyle(project.id)}
+                  aria-hidden="true"
+                >
+                  {initials(project.name)}
                 </span>
+                {!sidebarCollapsed && (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm">{project.name}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {project.currentCommit.slice(0, 7)}
+                    </span>
+                  </span>
+                )}
+              </button>
+              {!sidebarCollapsed && (
+                <button
+                  type="button"
+                  aria-label={`删除应用 ${project.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void deleteProject(project);
+                  }}
+                  className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
               )}
-            </button>
+            </div>
           ))}
         </nav>
         <div

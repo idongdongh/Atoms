@@ -13,6 +13,7 @@ class FakePreviewProvider implements PreviewProvider {
   readonly stops: string[] = [];
   #failuresRemaining: number;
   #gate: (() => Promise<void>) | null;
+  #live = new Set<string>();
 
   constructor(failStarts = 0, gate: (() => Promise<void>) | null = null) {
     this.#failuresRemaining = failStarts;
@@ -28,6 +29,7 @@ class FakePreviewProvider implements PreviewProvider {
     if (this.#failuresRemaining-- > 0) {
       throw new Error("dev server crashed");
     }
+    this.#live.add(input.projectId);
     return {
       sandboxId: `fake-${input.projectId}`,
       projectId: input.projectId,
@@ -40,6 +42,11 @@ class FakePreviewProvider implements PreviewProvider {
 
   async stop(projectId: string): Promise<void> {
     this.stops.push(projectId);
+    this.#live.delete(projectId);
+  }
+
+  listProjectIds(): string[] {
+    return [...this.#live];
   }
 }
 
@@ -305,6 +312,30 @@ describe("reconcileProjectPreviews", () => {
       expect(store.getProjectPreview(projectId)?.status).toBe("running"),
     );
     expect(provider.starts).toEqual([projectId]);
+    store.close();
+  });
+
+  it("stops dev servers whose project was deleted", async () => {
+    const store = new ControlPlaneStore(":memory:");
+    const projectId = seedProject(store);
+    const provider = new FakePreviewProvider();
+    await startProjectPreview({
+      store,
+      previewProvider: provider,
+      projectId,
+      workspaceRoot: `/tmp/workspaces/${projectId}`,
+    });
+    store.deleteProject(projectId);
+
+    await reconcileProjectPreviews({
+      store,
+      previewProvider: provider,
+      workspaceRoot: "/tmp/workspaces",
+      idleMs: 600_000,
+    });
+
+    expect(provider.stops).toContain(projectId);
+    expect(provider.listProjectIds()).toEqual([]);
     store.close();
   });
 });
