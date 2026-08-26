@@ -4,6 +4,7 @@
 
 - 在线体验：<http://119.28.133.244>（注册任意邮箱即可；演示账号 `demo@atoms.test` / `demo-password`）
 - 代码仓库：<https://github.com/idongdongh/Atoms>
+- 已验证的生成样例：[待办事项（数据库版）](http://119.28.133.244/published/f8d2b1a1-388c-4499-bcb8-d7006ed577f5/)（一句话生成，数据存 Supabase，刷新后仍在）
 - 部署形态与操作手册：[docs/deployment.md](docs/deployment.md)
 - 开发计划与完成状态：[docs/phase-2-development-plan.md](docs/phase-2-development-plan.md) §0
 
