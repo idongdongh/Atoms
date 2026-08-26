@@ -5,7 +5,12 @@ import "@fontsource/geist/400.css";
 import "@fontsource/geist/500.css";
 import "@fontsource/geist/700.css";
 import "@fontsource/geist-mono/400.css";
-import "./styles.css";
+import "./globals.css";
+
+// Dyad follows the system color scheme by toggling .dark on the root.
+if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+  document.documentElement.classList.add("dark");
+}
 
 const root = document.getElementById("root");
 
