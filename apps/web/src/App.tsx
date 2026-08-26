@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import {
+  Panel,
+  PanelGroup,
+  PanelResizeHandle,
+  type ImperativePanelHandle,
+} from "react-resizable-panels";
 import {
   Code2,
   Eye,
@@ -7,6 +12,11 @@ import {
   Globe,
   History,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
   RefreshCw,
   SendHorizontal,
   Sparkles,
@@ -177,6 +187,11 @@ export function App() {
     "preview" | "files" | "code" | "publish"
   >("preview");
   const [showVersions, setShowVersions] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
+  const chatPanelRef = useRef<ImperativePanelHandle>(null);
+  const previewPanelRef = useRef<ImperativePanelHandle>(null);
   const [promptIdeas, setPromptIdeas] = useState(() =>
     [...inspirationPrompts].sort(() => 0.5 - Math.random()).slice(0, 3),
   );
@@ -756,18 +771,33 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <header className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-(--sidebar) px-3">
-        <button
-          type="button"
-          onClick={() => setSelectedId(null)}
-          className="flex items-center gap-2 font-semibold text-sidebar-foreground"
-          aria-label="回到主页"
-        >
-          <span className="grid size-6 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground">
-            A
-          </span>
-          Atoms
-        </button>
+      <header className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-(--sidebar) px-2">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            className="text-sidebar-foreground hover:bg-sidebar-accent/60"
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen className="size-4" />
+            ) : (
+              <PanelLeftClose className="size-4" />
+            )}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setSelectedId(null)}
+            className="flex items-center gap-2 pl-1 font-semibold text-sidebar-foreground"
+            aria-label="回到主页"
+          >
+            <span className="grid size-6 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground">
+              A
+            </span>
+            Atoms
+          </button>
+        </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {authUser.email}
           <Button variant="ghost" size="sm" onClick={() => void logout()}>
@@ -777,33 +807,46 @@ export function App() {
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
-        <aside className="w-60 shrink-0 overflow-y-auto border-r border-border bg-(--sidebar) p-2.5 text-sidebar-foreground">
-          <form onSubmit={createProject} className="mb-2.5 flex gap-1.5">
-            <label htmlFor="project-name" className="sr-only">
-              新应用名称
-            </label>
-            <Input
-              id="project-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="新应用名称…"
-              maxLength={80}
-              disabled={creating}
-            />
-            <Button type="submit" size="sm" disabled={!name.trim() || creating}>
-              新建
-            </Button>
-          </form>
-          <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">
-            应用 · {projects.length}
-          </p>
+        <aside
+          className={cn(
+            "shrink-0 overflow-y-auto border-r border-border bg-(--sidebar) p-2 text-sidebar-foreground transition-all",
+            sidebarCollapsed ? "w-14" : "w-60",
+          )}
+        >
+          {!sidebarCollapsed && (
+            <form onSubmit={createProject} className="mb-2.5 flex gap-1.5">
+              <label htmlFor="project-name" className="sr-only">
+                新应用名称
+              </label>
+              <Input
+                id="project-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="新应用名称…"
+                maxLength={80}
+                disabled={creating}
+              />
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!name.trim() || creating}
+              >
+                新建
+              </Button>
+            </form>
+          )}
+          {!sidebarCollapsed && (
+            <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">
+              应用 · {projects.length}
+            </p>
+          )}
           <nav className="grid gap-0.5">
-            {state === "loading" && (
+            {state === "loading" && !sidebarCollapsed && (
               <p className="px-3 py-2 text-sm text-muted-foreground">
                 正在加载项目…
               </p>
             )}
-            {state === "ready" && projects.length === 0 && (
+            {state === "ready" && projects.length === 0 && !sidebarCollapsed && (
               <p className="px-3 py-2 text-sm text-muted-foreground">
                 创建第一个应用，开始与 Agent 协作。
               </p>
@@ -813,8 +856,12 @@ export function App() {
                 key={project.id}
                 type="button"
                 onClick={() => setSelectedId(project.id)}
+                title={project.name}
                 className={cn(
-                  "flex w-full items-center justify-start gap-2 rounded-md py-2 pl-2 pr-2 text-left",
+                  "flex w-full items-center justify-start rounded-md text-left",
+                  sidebarCollapsed
+                    ? "justify-center p-2"
+                    : "gap-2 py-2 pl-2 pr-2",
                   project.id === selectedId
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "hover:bg-sidebar-accent/60",
@@ -827,12 +874,14 @@ export function App() {
                 >
                   {initials(project.name)}
                 </span>
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm">{project.name}</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {project.currentCommit.slice(0, 7)}
+                {!sidebarCollapsed && (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm">{project.name}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {project.currentCommit.slice(0, 7)}
+                    </span>
                   </span>
-                </span>
+                )}
               </button>
             ))}
           </nav>
@@ -842,7 +891,15 @@ export function App() {
             homeScreen
           ) : (
             <PanelGroup direction="horizontal" className="min-h-0 flex-1">
-              <Panel defaultSize={46} minSize={28} className="min-w-0">
+              <Panel
+                ref={chatPanelRef}
+                defaultSize={46}
+                minSize={28}
+                collapsible
+                onCollapse={() => setChatCollapsed(true)}
+                onExpand={() => setChatCollapsed(false)}
+                className="min-w-0"
+              >
                 <div className="flex h-full min-w-0 flex-col">
                   <header className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1.5 pt-2">
                     <div className="min-w-0">
@@ -870,6 +927,28 @@ export function App() {
                       >
                         <History className="size-4" />
                         版本 {versions.length}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={
+                          previewCollapsed ? "展开预览" : "收起预览"
+                        }
+                        className={cn(
+                          previewCollapsed && "bg-primary/10 text-primary",
+                        )}
+                        onClick={() => {
+                          const panel = previewPanelRef.current;
+                          if (!panel) return;
+                          if (previewCollapsed) panel.expand();
+                          else panel.collapse();
+                        }}
+                      >
+                        {previewCollapsed ? (
+                          <PanelRightOpen className="size-5" />
+                        ) : (
+                          <PanelRightClose className="size-5" />
+                        )}
                       </Button>
                     </div>
                   </header>
@@ -982,8 +1061,21 @@ export function App() {
                   <div className="shrink-0">{composer}</div>
                 </div>
               </Panel>
-              <PanelResizeHandle className="w-1 bg-gray-200 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700" />
-              <Panel defaultSize={54} minSize={24} className="min-w-0">
+              <PanelResizeHandle
+                className={cn(
+                  "bg-gray-200 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700",
+                  chatCollapsed ? "w-2" : "w-1",
+                )}
+              />
+              <Panel
+                ref={previewPanelRef}
+                defaultSize={54}
+                minSize={24}
+                collapsible
+                onCollapse={() => setPreviewCollapsed(true)}
+                onExpand={() => setPreviewCollapsed(false)}
+                className="min-w-0"
+              >
                 <div className="flex h-full min-w-0 flex-col">
                   <div className="flex shrink-0 items-center gap-2 border-b border-border p-2">
                     <div className="flex min-w-0 flex-1 gap-1">
@@ -1023,6 +1115,28 @@ export function App() {
                         已发布 ↗
                       </a>
                     )}
+                    <div className="ml-1 shrink-0 border-l border-border pl-2">
+                      <button
+                        type="button"
+                        aria-label={chatCollapsed ? "展开聊天" : "收起聊天"}
+                        onClick={() => {
+                          const panel = chatPanelRef.current;
+                          if (!panel) return;
+                          if (chatCollapsed) panel.expand();
+                          else panel.collapse();
+                        }}
+                        className={cn(
+                          "rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+                          chatCollapsed && "bg-primary/10 text-primary",
+                        )}
+                      >
+                        {chatCollapsed ? (
+                          <PanelLeftOpen className="size-5" />
+                        ) : (
+                          <PanelLeftClose className="size-5" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex min-h-0 flex-1 flex-col">
                     {rightTab === "preview" &&
