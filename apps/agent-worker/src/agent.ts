@@ -198,7 +198,8 @@ Database: when the app needs persistent data, first call db_create_table (it ret
             { role: "user", content: userMessage.content },
           ];
           const changedPaths = new Set<string>();
-          const responseParts: string[] = [];
+          const progressParts: string[] = [];
+          let finalText = "";
           let modelFinished = false;
 
           for (let step = 0; step < this.#maxSteps; step += 1) {
@@ -212,13 +213,17 @@ Database: when the app needs persistent data, first call db_create_table (it ret
               model: run.model ?? undefined,
             });
             if (turn.content) {
-              responseParts.push(turn.content);
               emit({ type: "message.delta", delta: turn.content });
             }
             if (turn.toolCalls.length === 0) {
+              finalText = turn.content;
               modelFinished = true;
               break;
             }
+            // Narration that accompanies tool calls is progress, not the
+            // final reply: it streams as events and never bloats the stored
+            // assistant message.
+            if (turn.content) progressParts.push(turn.content);
 
             messages.push({
               role: "assistant",
@@ -289,7 +294,8 @@ Database: when the app needs persistent data, first call db_create_table (it ret
             );
           }
           if (changedPaths.size === 0) {
-            if (responseParts.length === 0) {
+            const reply = finalText || progressParts.at(-1) || "";
+            if (!reply) {
               throw new RunFailure(
                 "no_changes",
                 "The agent completed without changing any project files or replying",
@@ -302,7 +308,7 @@ Database: when the app needs persistent data, first call db_create_table (it ret
             this.#store.transitionRun(run.id, "committing");
             this.#store.addAssistantMessage({
               chatId: run.chatId,
-              content: responseParts.join("\n\n"),
+              content: reply,
               sourceCommit: run.baseCommit,
               resultCommit: run.baseCommit,
               model: run.model,
@@ -324,7 +330,8 @@ Database: when the app needs persistent data, first call db_create_table (it ret
             `Agent: ${userMessage.content.slice(0, 72).replaceAll("\n", " ")}`,
           );
           emit({ type: "files.changed", paths: [...changedPaths].sort() });
-          const content = responseParts.join("\n\n") || "已完成项目文件更新。";
+          const content =
+            finalText || progressParts.at(-1) || "已完成项目文件更新。";
           this.#store.addAssistantMessage({
             chatId: run.chatId,
             content,

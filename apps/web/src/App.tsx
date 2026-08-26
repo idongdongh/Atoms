@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Panel,
   PanelGroup,
@@ -1189,17 +1191,23 @@ export function App() {
                             <p className="mb-0.5 text-[10px] font-semibold text-muted-foreground">
                               Agent
                             </p>
-                            <p className="break-words text-[15px] leading-relaxed">
-                              {message.content}
-                            </p>
+                            <div className="prose prose-sm dark:prose-invert max-w-none break-words text-[15px] leading-relaxed">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {message.content}
+                              </ReactMarkdown>
+                            </div>
                           </div>
                         ),
                       )}
                       {events
                         .slice(-12)
-                        // The chat area already renders the full assistant
-                        // message; echoing it again as a raw event is noise.
-                        .filter((event) => event.type !== "message.delta")
+                        // Progress narration (message.delta) shows only while
+                        // the run is live; once it ends the stored assistant
+                        // message replaces it.
+                        .filter(
+                          (event) =>
+                            event.type !== "message.delta" || Boolean(running),
+                        )
                         .map((event) => (
                           <div
                             key={`${event.runId}-${event.sequence}`}
@@ -1207,7 +1215,9 @@ export function App() {
                               "mt-1.5 text-xs leading-relaxed",
                               event.type.includes("failed")
                                 ? "text-destructive"
-                                : "text-muted-foreground",
+                                : event.type === "message.delta"
+                                  ? "italic text-muted-foreground/80"
+                                  : "text-muted-foreground",
                             )}
                           >
                             {eventLabel(event)}

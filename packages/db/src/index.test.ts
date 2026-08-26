@@ -186,4 +186,53 @@ describe("ControlPlaneStore", () => {
     expect(store.hasActiveRun(project.id)).toBe(false);
     store.close();
   });
+
+  it("deletes a project with all dependent rows", () => {
+    const store = new ControlPlaneStore(":memory:");
+    const userId = store.ensureDevelopmentUser();
+    const projectId = randomUUID();
+    const chatId = randomUUID();
+    const runId = randomUUID();
+    store.createProject({
+      id: projectId,
+      userId,
+      name: "Doomed",
+      slug: "doomed-test",
+      templateId: "react-vite",
+      defaultBranch: "main",
+      currentCommit: "a".repeat(40),
+      chatId,
+      createdAt: new Date().toISOString(),
+    });
+    store.createRun({
+      id: runId,
+      projectId,
+      chatId,
+      prompt: "doomed run",
+      idempotencyKey: "delete-test-1",
+    });
+    store.appendAgentEvent({
+      runId,
+      type: "run.started",
+    });
+    store.setProjectPreview({ projectId, status: "running", port: 4200 });
+    const releaseId = randomUUID();
+    store.createRelease({
+      id: releaseId,
+      projectId,
+      commitHash: "b".repeat(40),
+    });
+    store.setPublication({ projectId, releaseId });
+
+    store.deleteProject(projectId);
+
+    expect(() => store.getProject(projectId)).toThrow("Project not found");
+    expect(store.listProjects(userId).some((p) => p.id === projectId)).toBe(
+      false,
+    );
+    expect(store.listVersions(projectId)).toHaveLength(0);
+    expect(store.listAgentEvents(runId)).toHaveLength(0);
+    expect(store.getProjectPreview(projectId)).toBeNull();
+    store.close();
+  });
 });
