@@ -400,13 +400,28 @@ export function App() {
 
   async function sendPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || !prompt.trim() || sending) return;
+    if (!prompt.trim() || sending) return;
     setSending(true);
     setEvents([]);
     setError(null);
     try {
+      let chatId = selected?.chatId;
+      if (!chatId) {
+        // Dyad-style first prompt: sending an idea creates the app.
+        const { project } = await requestJson<{ project: Project }>(
+          "/api/projects",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: generateCuteAppName() }),
+          },
+        );
+        setProjects((current) => [project, ...current]);
+        setSelectedId(project.id);
+        chatId = project.chatId;
+      }
       const { run } = await requestJson<{ run: AgentRun }>(
-        `/api/chats/${selected.chatId}/runs`,
+        `/api/chats/${chatId}/runs`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -662,7 +677,7 @@ export function App() {
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           placeholder="让 Agent 构建或修改你的应用…"
-          disabled={!selected || !!sending}
+          disabled={!!sending}
           className="min-h-[44px] w-full resize-none overflow-y-auto px-3 pb-2 pt-3 text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50"
           rows={2}
         />
@@ -680,7 +695,7 @@ export function App() {
           <button
             type="submit"
             aria-label="发送"
-            disabled={!selected || !prompt.trim() || !!sending}
+            disabled={!prompt.trim() || !!sending}
             className="rounded-lg p-2 text-muted-foreground transition-colors duration-150 hover:text-primary disabled:opacity-30"
           >
             <SendHorizontal className="size-5" />
@@ -690,15 +705,67 @@ export function App() {
     </form>
   );
 
+  // Dyad-style home screen: the landing page before the first prompt.
+  const homeScreen = (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center p-8">
+        <h1 className="text-center text-4xl font-semibold tracking-tight">
+          你想构建什么？
+        </h1>
+        <p className="mt-3 text-center text-base leading-7 text-muted-foreground">
+          描述你的想法，Atoms 会把它变成一个可运行的应用。
+        </p>
+        <div className="mt-6 w-full">{composer}</div>
+        {sending && (
+          <div className="mt-4 flex items-center gap-3 text-sm text-muted-foreground">
+            <span className="size-6 animate-spin rounded-full border-4 border-border border-t-primary" />
+            正在创建应用，这可能需要一点时间…
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          {promptIdeas.map((item) => (
+            <button
+              type="button"
+              key={item.label}
+              onClick={() => setPrompt(item.prompt)}
+              className="flex items-center gap-2 rounded-full border border-border bg-background px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent hover:text-foreground"
+            >
+              {item.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setPromptIdeas(
+                [...inspirationPrompts]
+                  .sort(() => 0.5 - Math.random())
+                  .slice(0, 3),
+              )
+            }
+            className="flex items-center gap-2 rounded-full border border-border bg-background px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent hover:text-foreground"
+          >
+            <RefreshCw className="size-4" />
+            换一批
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-screen flex-col bg-background">
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-(--sidebar) px-3">
-        <div className="flex items-center gap-2 font-semibold text-sidebar-foreground">
+        <button
+          type="button"
+          onClick={() => setSelectedId(null)}
+          className="flex items-center gap-2 font-semibold text-sidebar-foreground"
+          aria-label="回到主页"
+        >
           <span className="grid size-6 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground">
             A
           </span>
           Atoms
-        </div>
+        </button>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {authUser.email}
           <Button variant="ghost" size="sm" onClick={() => void logout()}>
@@ -769,59 +836,8 @@ export function App() {
           </nav>
         </aside>
         <main className="flex min-w-0 flex-1 flex-col border-l border-border bg-background">
-          {!selected ? (
-            <div className="flex flex-1 flex-col items-center justify-center p-8">
-              <h1 className="text-4xl font-semibold tracking-tight">
-                把想法变成可运行的产品
-              </h1>
-              <p className="mt-3 text-base text-muted-foreground">
-                在左侧创建一个应用，向 Agent 描述需求，观察真实的文件变更、版本与预览。
-              </p>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-              <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center p-8">
-                <h1 className="text-center text-4xl font-semibold tracking-tight">
-                  你想构建什么？
-                </h1>
-                <p className="mt-3 text-center text-base leading-7 text-muted-foreground">
-                  描述你的想法，Atoms 会把它变成一个可运行的应用。
-                </p>
-                <div className="mt-6 w-full">{composer}</div>
-                {sending && (
-                  <div className="mt-4 flex items-center gap-3 text-sm text-muted-foreground">
-                    <span className="size-6 animate-spin rounded-full border-4 border-border border-t-primary" />
-                    正在创建应用，这可能需要一点时间…
-                  </div>
-                )}
-                <div className="mt-4 flex flex-wrap justify-center gap-2">
-                  {promptIdeas.map((item) => (
-                    <button
-                      type="button"
-                      key={item.label}
-                      onClick={() => setPrompt(item.prompt)}
-                      className="flex items-center gap-2 rounded-full border border-border bg-background px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent hover:text-foreground"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPromptIdeas(
-                        [...inspirationPrompts]
-                          .sort(() => 0.5 - Math.random())
-                          .slice(0, 3),
-                      )
-                    }
-                    className="flex items-center gap-2 rounded-full border border-border bg-background px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent hover:text-foreground"
-                  >
-                    <RefreshCw className="size-4" />
-                    换一批
-                  </button>
-                </div>
-              </div>
-            </div>
+          {!selected || messages.length === 0 ? (
+            homeScreen
           ) : (
             <PanelGroup direction="horizontal" className="min-h-0 flex-1">
               <Panel defaultSize={46} minSize={28} className="min-w-0">
