@@ -106,9 +106,7 @@ export class OpenAICompatibleModel implements AgentModel {
       });
     } catch (error) {
       if (error instanceof Error && error.name === "TimeoutError") {
-        throw new Error(
-          `Model request timed out after ${this.#timeoutMs}ms`,
-        );
+        throw new Error(`Model request timed out after ${this.#timeoutMs}ms`);
       }
       throw error;
     }
@@ -151,9 +149,8 @@ export class DemoModel implements AgentModel {
       };
     }
     const prompt =
-      input.messages
-        .filter((message) => message.role === "user")
-        .at(-1)?.content ?? "你的产品";
+      input.messages.filter((message) => message.role === "user").at(-1)
+        ?.content ?? "你的产品";
     const writeTool = input.tools.find((tool) => tool.name === "write_file");
     if (!writeTool) throw new Error("write_file tool is not available");
     return {
