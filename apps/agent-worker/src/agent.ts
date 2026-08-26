@@ -22,6 +22,11 @@ import type {
   ModelToolDefinition,
 } from "./model.js";
 import { startProjectPreview } from "./preview.js";
+import {
+  dbCreateTableTool,
+  executeCreateTable,
+  type SupabaseConfig,
+} from "./supabase-tools.js";
 
 const listFilesArgs = z.object({}).passthrough();
 const emptyArgs = z.object({}).passthrough();
@@ -126,6 +131,7 @@ export type AgentRunnerOptions = {
   model: AgentModel;
   previewProvider?: PreviewProvider;
   maxSteps?: number;
+  supabase?: SupabaseConfig;
 };
 
 export class AgentRunner {
@@ -134,6 +140,9 @@ export class AgentRunner {
   readonly #model: AgentModel;
   readonly #previewProvider: PreviewProvider | undefined;
   readonly #maxSteps: number;
+  readonly #tools: ModelToolDefinition[];
+  readonly #systemPrompt: string;
+  readonly #supabase: SupabaseConfig | undefined;
 
   constructor(options: AgentRunnerOptions) {
     this.#store = options.store;
@@ -141,6 +150,14 @@ export class AgentRunner {
     this.#model = options.model;
     this.#previewProvider = options.previewProvider;
     this.#maxSteps = options.maxSteps ?? 12;
+    this.#supabase = options.supabase;
+    this.#tools = options.supabase
+      ? [...toolDefinitions, dbCreateTableTool]
+      : [...toolDefinitions];
+    this.#systemPrompt = options.supabase
+      ? `${systemPrompt}
+Database: when the app needs persistent data, first call db_create_table (it returns the physical table name), then read and write rows in the frontend via the shared client \`import { supabase } from "@/lib/supabase"\` and \`.from("<physical table name>")\`. The client is preconfigured from environment variables — never hardcode URLs or keys.`
+      : systemPrompt;
   }
 
   async run(run: AgentRun): Promise<void> {
@@ -176,7 +193,7 @@ export class AgentRunner {
               content: message.content.slice(0, 2000),
             }));
           const messages: AgentChatMessage[] = [
-            { role: "system", content: systemPrompt },
+            { role: "system", content: this.#systemPrompt },
             ...chatHistory,
             { role: "user", content: userMessage.content },
           ];
@@ -191,7 +208,7 @@ export class AgentRunner {
             }
             const turn = await this.#model.complete({
               messages,
-              tools: toolDefinitions,
+              tools: this.#tools,
               model: run.model ?? undefined,
             });
             if (turn.content) {
@@ -228,6 +245,9 @@ export class AgentRunner {
                   workspace,
                   toolCall,
                   changedPaths,
+                  toolCall.name === "db_create_table"
+                    ? this.#supabaseContext(run.projectId)
+                    : undefined,
                 );
                 this.#store.completeToolCall(
                   toolId,
@@ -360,6 +380,16 @@ export class AgentRunner {
     );
   }
 
+  #supabaseContext(projectId: string): {
+    projectId: string;
+    supabase: SupabaseConfig;
+  } {
+    if (!this.#supabase) {
+      throw new Error("Supabase is not configured for this runner");
+    }
+    return { projectId, supabase: this.#supabase };
+  }
+
   #eventEmitter(runId: string): (event: EventInput) => void {
     return (event) => {
       this.#store.appendAgentEvent({ ...event, runId });
@@ -380,9 +410,18 @@ async function executeTool(
   workspace: Workspace,
   toolCall: ModelToolCall,
   changedPaths: Set<string>,
+  context?: { projectId: string; supabase: SupabaseConfig },
 ): Promise<unknown> {
   const raw: unknown = JSON.parse(toolCall.arguments);
   switch (toolCall.name) {
+    case "db_create_table": {
+      if (!context) {
+        throw new Error(
+          "Database is not configured on this deployment; use localStorage instead",
+        );
+      }
+      return await executeCreateTable(context.supabase, context.projectId, raw);
+    }
     case "list_files": {
       listFilesArgs.parse(raw);
       return (await workspace.listFiles()).filter(

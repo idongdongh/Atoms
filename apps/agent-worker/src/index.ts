@@ -4,6 +4,7 @@ import { LocalDevelopmentSandboxProvider } from "@atoms/sandbox-sdk";
 import { AgentRunner } from "./agent.js";
 import { createConfiguredModel, type AgentModel } from "./model.js";
 import { reconcileProjectPreviews } from "./preview.js";
+import { parseSupabaseEnv } from "./supabase-tools.js";
 
 export function getWorkerIdentity() {
   return {
@@ -17,6 +18,7 @@ export async function processNextRun(input: {
   workspaceRoot: string;
   model: AgentModel;
   previewProvider?: import("@atoms/sandbox-sdk").PreviewProvider;
+  supabase?: ReturnType<typeof parseSupabaseEnv>;
 }): Promise<boolean> {
   const run = input.store.claimNextRun();
   if (!run) return false;
@@ -27,6 +29,7 @@ export async function processNextRun(input: {
     ...(input.previewProvider
       ? { previewProvider: input.previewProvider }
       : {}),
+    ...(input.supabase ? { supabase: input.supabase } : {}),
   };
   await new AgentRunner(runnerOptions).run(run);
   return true;
@@ -55,6 +58,7 @@ async function startWorker(): Promise<void> {
     process.env.ATOMS_PREVIEW_PROVIDER === "local"
       ? new LocalDevelopmentSandboxProvider()
       : undefined;
+  const supabase = parseSupabaseEnv();
   for (const interrupted of store.recoverInterruptedRuns()) {
     store.appendAgentEvent({
       runId: interrupted.id,
@@ -81,6 +85,7 @@ async function startWorker(): Promise<void> {
         workspaceRoot,
         model,
         ...(previewProvider ? { previewProvider } : {}),
+        ...(supabase ? { supabase } : {}),
       };
       const processed = await processNextRun(processInput);
       if (!processed) {

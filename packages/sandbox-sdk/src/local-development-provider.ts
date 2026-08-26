@@ -49,6 +49,13 @@ export function controlledChildEnv(): NodeJS.ProcessEnv {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }
+  // Supabase URL + anon key are public by design (the anon key is protected
+  // by row-level security, not secrecy) and generated apps need them at build
+  // time. The service_role key must never reach a child process.
+  if (process.env.ATOMS_SUPABASE_URL && process.env.ATOMS_SUPABASE_ANON_KEY) {
+    env.VITE_SUPABASE_URL = process.env.ATOMS_SUPABASE_URL;
+    env.VITE_SUPABASE_ANON_KEY = process.env.ATOMS_SUPABASE_ANON_KEY;
+  }
   return env;
 }
 
