@@ -899,7 +899,7 @@ export function App() {
           )}
           {state === "ready" && projects.length === 0 && !sidebarCollapsed && (
             <p className="px-3 py-2 text-sm text-muted-foreground">
-              在主页描述一个想法，或点上方新建。
+              在主页描述一个想法，就能创建你的第一个应用。
             </p>
           )}
           {projects.map((project) => (
