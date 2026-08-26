@@ -4,14 +4,31 @@
 - 更新时间：2026-08-26
 - 前置阶段：[第一阶段开发计划](phase-1-development-plan.md)
 
-## 0. Demo 落地声明（2026-08-26）
+## 0. Demo 落地声明与执行状态（2026-08-26）
 
-第二阶段面向长期产品演进。当前笔试交付只落地以下薄切片，运行形态见 [ADR 0005](adr/0005-demo-runtime-topology.md) 与 [ADR 0006](adr/0006-generated-app-data-and-publish.md)：
+第二阶段面向长期产品演进。笔试交付运行形态见 [ADR 0005](adr/0005-demo-runtime-topology.md) 与 [ADR 0006](adr/0006-generated-app-data-and-publish.md)。
 
-- 全栈生成 lite：生成应用自带 Supabase 持久数据（平台项目内每应用独立 schema，anon key + RLS 直连）。
-- 自有子域一键发布与秒级回退（受控静态构建 + 不可变 release 目录 + 激活指针）。
+### 0.1 已交付（第一阶段效果 + Demo 薄切片）
 
-以下能力明确不在笔试 Demo 中实现，保留为本计划里程碑：GitHub 同步（P2-M3）、Vercel 发布（P2-M5 候选）、配额与滥用防护（P2-M8）、自定义域名与 TLS（P2-M6）、完整制品库与 Staging 流量切换（P2-M4/M5）、Beta 门禁（P2-M9）。Demo 轨道的实现用于产品验证，不标记对应里程碑完成。
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| Builder 内核主链 | ✅ | 项目创建（模板+Git 初始版本）→ Chat 驱动 Agent（结构化工具）→ 持久事件流/SSE → 每轮自动 commit → 版本列表与非破坏性回滚 |
+| 对抗式审查与加固 | ✅ | 事件序列原子化、状态迁移事务化、写锁 stale 修正、模型超时、对话历史入上下文、环境白名单、进程组回收 |
+| 自有子域发布 | ✅ | 受控构建 → 不可变 release 目录 → 激活指针 → `/published/<id>/` 公网访问 + 秒级回退 |
+| 账号与会话隔离 | ✅ | 注册/登录/登出（scrypt + 会话 Cookie）、全资源按用户隔离、变更操作客户端头防护、`/published` 与 `/p/` 公开 |
+| 预览网关 | ✅ | 本地直连 dev server（跨源）；生产走 `ATOMS_PREVIEW_PUBLIC_ORIGIN` + 公开 `/p/<id>/*` 路由（HTML 注入 base） |
+| 前端体验 | ✅ | 移植 Dyad 前端栈（Tailwind v4 token 全套 + shadcn 组件 + 双状态主页/分栏 + 面板与侧栏展开收起），Manus 暖纸主题 |
+
+### 0.2 剩余里程碑（按优先级）
+
+1. **M-B1 全栈生成（Supabase lite）**：模板集成 supabase-js（anon key + RLS 直连）；Agent 增加建表/迁移、RLS 策略受控工具（服务端 service_role）。验收：一句话生成带数据库 CRUD 的应用，刷新数据仍在。**前置：平台 Supabase 项目三项凭据（URL / anon key / service_role key）。**
+2. **M-B0 交付物**：笔试说明文档（思路/取舍/完成度/扩展优先级，引用本计划）；Dockerfile、docker-compose.yml、Caddyfile（主站 + `/api` + `/p` 预览源 + `/published`）、环境变量清单。
+3. **M-部署验收**：腾讯云香港轻量 2C2G 上线、域名泛解析、DeepSeek 真模型接入（`ATOMS_MODEL_*` 三项）、演示前冒烟（含 Supabase 免费档休眠激活）。
+4. **M-运行加固（部署前完成）**：预览沙箱空闲回收（2C2G 内存约束）；预览失败自动重试一次；（可选）`run_typecheck/run_build` 工具与浏览器 E2E 冒烟。
+
+### 0.3 明确不在笔试 Demo 实现
+
+GitHub 同步（P2-M3）、Vercel 发布（P2-M5 候选）、配额与滥用防护（P2-M8）、自定义域名/TLS（P2-M6）、完整制品库与 Staging 流量切换（P2-M4/M5）、Beta 门禁（P2-M9）。Demo 轨道实现不标记对应里程碑完成。
 
 ## 1. 阶段定位
 
