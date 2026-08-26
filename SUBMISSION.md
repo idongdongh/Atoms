@@ -4,7 +4,6 @@
 
 - 在线体验：<http://119.28.133.244>（注册任意邮箱即可；演示账号 `demo@atoms.test` / `demo-password`）
 - 代码仓库：<https://github.com/idongdongh/Atoms>
-- 已验证的生成样例：[番茄钟计时器](http://119.28.133.244/published/448bb2af-aa5a-40a5-999f-2eb1c5c50202/)（DeepSeek `deepseek-v4-flash` 一句话生成后发布）
 - 部署形态与操作手册：[docs/deployment.md](docs/deployment.md)
 - 开发计划与完成状态：[docs/phase-2-development-plan.md](docs/phase-2-development-plan.md) §0
 
