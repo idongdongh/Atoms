@@ -27,6 +27,10 @@ export interface AgentModel {
     messages: AgentChatMessage[];
     tools: ModelToolDefinition[];
     model?: string | undefined;
+    // When provided, implementations that support streaming forward text
+    // increments as they arrive; the returned turn still carries the full
+    // content. Implementations without streaming simply never call it.
+    onDelta?: ((delta: string) => void) | undefined;
   }): Promise<ModelTurn>;
 }
 
@@ -40,6 +44,26 @@ type OpenAIResponse = {
       }>;
     };
   }>;
+};
+
+type StreamChunk = {
+  choices?: Array<{
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+  }>;
+};
+
+type StreamedToolCall = {
+  id: string;
+  name: string;
+  arguments: string;
 };
 
 export class OpenAICompatibleModel implements AgentModel {
@@ -64,7 +88,12 @@ export class OpenAICompatibleModel implements AgentModel {
     messages: AgentChatMessage[];
     tools: ModelToolDefinition[];
     model?: string | undefined;
+    onDelta?: ((delta: string) => void) | undefined;
   }): Promise<ModelTurn> {
+    const { onDelta } = input;
+    if (onDelta) {
+      return await this.#completeStreaming({ ...input, onDelta });
+    }
     let response: Response;
     try {
       response = await fetch(`${this.#baseUrl}/chat/completions`, {
@@ -73,35 +102,7 @@ export class OpenAICompatibleModel implements AgentModel {
           authorization: `Bearer ${this.#apiKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({
-          model: input.model ?? this.#defaultModel,
-          temperature: 0.2,
-          messages: input.messages.map((message) => ({
-            role: message.role,
-            content: message.content,
-            ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
-            ...(message.toolCalls
-              ? {
-                  tool_calls: message.toolCalls.map((toolCall) => ({
-                    id: toolCall.id,
-                    type: "function",
-                    function: {
-                      name: toolCall.name,
-                      arguments: toolCall.arguments,
-                    },
-                  })),
-                }
-              : {}),
-          })),
-          tools: input.tools.map((tool) => ({
-            type: "function",
-            function: {
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.parameters,
-            },
-          })),
-        }),
+        body: JSON.stringify(this.#requestBody(input)),
         signal: AbortSignal.timeout(this.#timeoutMs),
       });
     } catch (error) {
@@ -132,6 +133,133 @@ export class OpenAICompatibleModel implements AgentModel {
           },
         ];
       }),
+    };
+  }
+
+  #requestBody(input: {
+    messages: AgentChatMessage[];
+    tools: ModelToolDefinition[];
+    model?: string | undefined;
+    stream?: boolean;
+  }): Record<string, unknown> {
+    return {
+      model: input.model ?? this.#defaultModel,
+      temperature: 0.2,
+      messages: input.messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+        ...(message.toolCalls
+          ? {
+              tool_calls: message.toolCalls.map((toolCall) => ({
+                id: toolCall.id,
+                type: "function",
+                function: {
+                  name: toolCall.name,
+                  arguments: toolCall.arguments,
+                },
+              })),
+            }
+          : {}),
+      })),
+      tools: input.tools.map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        },
+      })),
+      ...(input.stream ? { stream: true } : {}),
+    };
+  }
+
+  // Streaming path: consumes the SSE chunk stream, forwarding text deltas
+  // as they arrive and reassembling tool calls from their argument shards.
+  async #completeStreaming(input: {
+    messages: AgentChatMessage[];
+    tools: ModelToolDefinition[];
+    model?: string | undefined;
+    onDelta: (delta: string) => void;
+  }): Promise<ModelTurn> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.#baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.#apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(this.#requestBody({ ...input, stream: true })),
+        signal: AbortSignal.timeout(this.#timeoutMs),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new Error(`Model request timed out after ${this.#timeoutMs}ms`);
+      }
+      throw error;
+    }
+    if (!response.ok || !response.body) {
+      const detail = (await response.text().catch(() => "")).slice(0, 500);
+      throw new Error(`Model request failed (${response.status}): ${detail}`);
+    }
+
+    let content = "";
+    const toolCalls = new Map<number, StreamedToolCall>();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for await (const chunkBytes of response.body) {
+      buffer += decoder.decode(chunkBytes, { stream: true });
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") continue;
+        let parsed: StreamChunk;
+        try {
+          parsed = JSON.parse(data) as StreamChunk;
+        } catch {
+          continue;
+        }
+        const delta = parsed.choices?.[0]?.delta;
+        if (!delta) continue;
+        if (delta.content) {
+          content += delta.content;
+          input.onDelta(delta.content);
+        }
+        for (const toolCallDelta of delta.tool_calls ?? []) {
+          const index = toolCallDelta.index ?? 0;
+          const existing = toolCalls.get(index) ?? {
+            id: "",
+            name: "",
+            arguments: "",
+          };
+          if (toolCallDelta.id) existing.id = toolCallDelta.id;
+          if (toolCallDelta.function?.name)
+            existing.name += toolCallDelta.function.name;
+          if (toolCallDelta.function?.arguments)
+            existing.arguments += toolCallDelta.function.arguments;
+          toolCalls.set(index, existing);
+        }
+      }
+    }
+    return {
+      content,
+      toolCalls: [...toolCalls.entries()]
+        .sort(([a], [b]) => a - b)
+        .flatMap(([, toolCall]) =>
+          toolCall.id && toolCall.name
+            ? [
+                {
+                  id: toolCall.id,
+                  name: toolCall.name,
+                  arguments: toolCall.arguments || "{}",
+                },
+              ]
+            : [],
+        ),
     };
   }
 }

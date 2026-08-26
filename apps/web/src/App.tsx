@@ -1127,39 +1127,64 @@ export function App() {
                           </div>
                         ),
                       )}
-                      {events
-                        .slice(-12)
-                        // Progress narration (message.delta) shows only while
-                        // the run is live; once it ends the stored assistant
-                        // message replaces it. Run start/completion labels are
-                        // noise the version badge already covers.
-                        .filter((event) => {
+                      {(() => {
+                        // Build the activity feed: consecutive streaming
+                        // deltas merge into one flowing paragraph; tool and
+                        // status events stay as single-line labels.
+                        const feed: Array<
+                          | { kind: "text"; key: string; text: string }
+                          | { kind: "event"; key: string; event: AgentEvent }
+                        > = [];
+                        for (const event of events.slice(-30)) {
                           if (
                             event.type === "run.started" ||
                             event.type === "run.completed"
                           ) {
-                            return false;
+                            continue;
                           }
                           if (event.type === "message.delta") {
-                            return Boolean(running);
+                            if (!running) continue;
+                            const last = feed.at(-1);
+                            if (last?.kind === "text") {
+                              last.text += event.delta;
+                            } else {
+                              feed.push({
+                                kind: "text",
+                                key: `${event.runId}-${event.sequence}`,
+                                text: event.delta,
+                              });
+                            }
+                            continue;
                           }
-                          return true;
-                        })
-                        .map((event) => (
-                          <div
-                            key={`${event.runId}-${event.sequence}`}
-                            className={cn(
-                              "mt-1.5 text-xs leading-relaxed",
-                              event.type.includes("failed")
-                                ? "text-destructive"
-                                : event.type === "message.delta"
-                                  ? "italic text-muted-foreground/80"
+                          feed.push({
+                            kind: "event",
+                            key: `${event.runId}-${event.sequence}`,
+                            event,
+                          });
+                        }
+                        return feed.map((item) =>
+                          item.kind === "text" ? (
+                            <p
+                              key={item.key}
+                              className="mt-1.5 whitespace-pre-wrap text-xs italic leading-relaxed text-muted-foreground/80"
+                            >
+                              {item.text}
+                            </p>
+                          ) : (
+                            <div
+                              key={item.key}
+                              className={cn(
+                                "mt-1.5 text-xs leading-relaxed",
+                                item.event.type.includes("failed")
+                                  ? "text-destructive"
                                   : "text-muted-foreground",
-                            )}
-                          >
-                            {eventLabel(event)}
-                          </div>
-                        ))}
+                              )}
+                            >
+                              {eventLabel(item.event)}
+                            </div>
+                          ),
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

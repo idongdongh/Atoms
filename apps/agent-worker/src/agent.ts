@@ -207,12 +207,33 @@ Database: when the app needs persistent data, first call db_create_table (it ret
               emit({ type: "run.cancelled" });
               return;
             }
+            // Streaming: forward text increments as they arrive, throttled
+            // into bundled message.delta events so the event table is not
+            // flooded with single-token rows.
+            let streamedViaDelta = false;
+            let deltaBuffer = "";
+            let deltaTimer: ReturnType<typeof setTimeout> | null = null;
+            const flushDelta = () => {
+              deltaTimer = null;
+              if (!deltaBuffer) return;
+              emit({ type: "message.delta", delta: deltaBuffer });
+              deltaBuffer = "";
+            };
             const turn = await this.#model.complete({
               messages,
               tools: this.#tools,
               model: run.model ?? undefined,
+              onDelta: (delta) => {
+                streamedViaDelta = true;
+                deltaBuffer += delta;
+                if (deltaTimer === null) {
+                  deltaTimer = setTimeout(flushDelta, 350);
+                }
+              },
             });
-            if (turn.content) {
+            if (deltaTimer !== null) clearTimeout(deltaTimer);
+            flushDelta();
+            if (turn.content && !streamedViaDelta) {
               emit({ type: "message.delta", delta: turn.content });
             }
             if (turn.toolCalls.length === 0) {
