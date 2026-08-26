@@ -19,7 +19,6 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  Plus,
   RefreshCw,
   SendHorizontal,
   Sparkles,
@@ -205,7 +204,6 @@ export function App() {
   >("preview");
   const [showVersions, setShowVersions] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [showNewAppInput, setShowNewAppInput] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const chatPanelRef = useRef<ImperativePanelHandle>(null);
@@ -216,7 +214,6 @@ export function App() {
   const feedRef = useRef<HTMLDivElement | null>(null);
   const [activeFile, setActiveFile] = useState<FileContent | null>(null);
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
-  const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "ready">("loading");
   const [creating, setCreating] = useState(false);
@@ -401,8 +398,10 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [selectedId, preview?.status]);
 
-  async function createProjectWithName(projectName: string) {
-    if (creating) return;
+  async function createProjectWithName(
+    projectName: string,
+  ): Promise<Project | null> {
+    if (creating) return null;
     setCreating(true);
     setError(null);
     try {
@@ -416,33 +415,10 @@ export function App() {
       );
       setProjects((current) => [project, ...current]);
       setSelectedId(project.id);
-      setName(generateCuteAppName());
+      return project;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "项目创建失败");
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function createProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!name.trim() || creating) return;
-    setCreating(true);
-    setError(null);
-    try {
-      const { project } = await requestJson<{ project: Project }>(
-        "/api/projects",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name }),
-        },
-      );
-      setProjects((current) => [project, ...current]);
-      setSelectedId(project.id);
-      setName(generateCuteAppName());
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "项目创建失败");
+      return null;
     } finally {
       setCreating(false);
     }
@@ -472,16 +448,11 @@ export function App() {
       let chatId = selected?.chatId;
       if (!chatId) {
         // Dyad-style first prompt: sending an idea creates the app.
-        const { project } = await requestJson<{ project: Project }>(
-          "/api/projects",
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name: generateCuteAppName() }),
-          },
-        );
-        setProjects((current) => [project, ...current]);
-        setSelectedId(project.id);
+        const project = await createProjectWithName(generateCuteAppName());
+        if (!project) {
+          setSending(false);
+          return;
+        }
         chatId = project.chatId;
       }
       const { run } = await requestJson<{ run: AgentRun }>(
@@ -881,69 +852,6 @@ export function App() {
               <PanelLeftClose className="size-4" />
             )}
           </Button>
-        </div>
-        <div
-          className={cn(
-            "px-2 pb-2",
-            sidebarCollapsed && "grid place-items-center",
-          )}
-        >
-          {sidebarCollapsed ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="新建应用"
-              onClick={() => void createProjectWithName(generateCuteAppName())}
-              className="text-sidebar-foreground hover:bg-sidebar-accent/60"
-            >
-              <Plus className="size-4" />
-            </Button>
-          ) : showNewAppInput ? (
-            <form
-              onSubmit={(event) => {
-                void createProject(event);
-                if (name.trim()) setShowNewAppInput(false);
-              }}
-              className="flex gap-1.5"
-            >
-              <label htmlFor="project-name" className="sr-only">
-                新应用名称
-              </label>
-              <Input
-                id="project-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="新应用名称…"
-                maxLength={80}
-                disabled={creating}
-                autoFocus
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setShowNewAppInput(false);
-                    setName("");
-                  }
-                }}
-              />
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!name.trim() || creating}
-              >
-                建
-              </Button>
-            </form>
-          ) : (
-            <Button
-              className="w-full"
-              onClick={() => {
-                setName(generateCuteAppName());
-                setShowNewAppInput(true);
-              }}
-            >
-              <Plus className="size-4" />
-              新建应用
-            </Button>
-          )}
         </div>
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
           <button
