@@ -46,12 +46,14 @@ const patchArgs = z.object({
 const toolDefinitions: ModelToolDefinition[] = [
   {
     name: "list_files",
-    description: "List the files in the current project workspace.",
+    description:
+      "List workspace files. The system message already carries a current listing; only call this when you suspect it is stale.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "read_file",
-    description: "Read one text file from the current project workspace.",
+    description:
+      "Read one text file. Batch independent reads when several files are concretely likely to be useful.",
     parameters: {
       type: "object",
       properties: {
@@ -63,7 +65,8 @@ const toolDefinitions: ModelToolDefinition[] = [
   },
   {
     name: "search_files",
-    description: "Search text in project files without reading secret files.",
+    description:
+      "Search text across project files (secrets excluded). Prefer this over guessing where something lives.",
     parameters: {
       type: "object",
       properties: { query: { type: "string", minLength: 1 } },
@@ -74,7 +77,7 @@ const toolDefinitions: ModelToolDefinition[] = [
   {
     name: "write_file",
     description:
-      "Create or replace one text file in the current project workspace.",
+      "Create or completely overwrite one text file. For small files prefer rewriting the whole file over patching it.",
     parameters: {
       type: "object",
       properties: {
@@ -126,7 +129,7 @@ Always reply in the same language the user is using.
 - Before editing, check whether the request is already implemented; if so, say so instead of redoing it.
 - Only touch files related to the request; leave everything else alone.
 - When new code is needed: briefly explain the plan in one or two short sentences, then write the code with your file tools, then end with a VERY concise, non-technical one-sentence summary of what changed.
-- Plan your tool calls before you start: you have a hard budget of about 12 tool rounds per request, so batch related writes and avoid re-reading files you already know.
+- Plan your tool calls before you start: you have a hard budget of about 20 tool rounds per request, so batch related writes and avoid re-reading files you already know.
 
 # Code rules
 
@@ -182,7 +185,7 @@ export class AgentRunner {
     this.#workspaceRoot = options.workspaceRoot;
     this.#model = options.model;
     this.#previewProvider = options.previewProvider;
-    this.#maxSteps = options.maxSteps ?? 12;
+    this.#maxSteps = options.maxSteps ?? 20;
     this.#supabase = options.supabase;
     this.#tools = options.supabase
       ? [...toolDefinitions, dbCreateTableTool]
@@ -225,8 +228,17 @@ Database: when the app needs persistent data, first call db_create_table (it ret
               role: message.role as "user" | "assistant",
               content: message.content.slice(0, 2000),
             }));
+          // Seed the model with the current file listing so it does not
+          // spend a tool round on list_files before every task.
+          const filePaths = (await workspace.listFiles())
+            .filter((entry) => entry.kind === "file")
+            .map((entry) => entry.path)
+            .slice(0, 120);
+          const systemContent = filePaths.length
+            ? `${this.#systemPrompt}\n\n# Current project files\n${filePaths.join("\n")}\n\nThis listing is current as of this request; skip list_files unless you suspect it is stale.`
+            : this.#systemPrompt;
           const messages: AgentChatMessage[] = [
-            { role: "system", content: this.#systemPrompt },
+            { role: "system", content: systemContent },
             ...chatHistory,
             { role: "user", content: userMessage.content },
           ];

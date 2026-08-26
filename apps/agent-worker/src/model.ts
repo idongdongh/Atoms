@@ -84,6 +84,39 @@ export class OpenAICompatibleModel implements AgentModel {
     this.#timeoutMs = input.timeoutMs ?? 120_000;
   }
 
+  // Transient upstream failures (rate limits, 5xx, socket resets) are common
+  // on shared model APIs; retry a couple of times with backoff before the
+  // run fails. Each attempt gets a fresh timeout budget.
+  async #fetchWithRetry(buildInit: () => RequestInit): Promise<Response> {
+    let lastError: unknown = new Error("model request never attempted");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 1_000 * 2 ** attempt),
+        );
+      }
+      try {
+        const response = await fetch(
+          `${this.#baseUrl}/chat/completions`,
+          buildInit(),
+        );
+        if (
+          (response.status === 429 || response.status >= 500) &&
+          attempt < 2
+        ) {
+          continue;
+        }
+        return response;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof Error && error.name === "TimeoutError") {
+          throw new Error(`Model request timed out after ${this.#timeoutMs}ms`);
+        }
+      }
+    }
+    throw lastError;
+  }
+
   async complete(input: {
     messages: AgentChatMessage[];
     tools: ModelToolDefinition[];
@@ -96,7 +129,7 @@ export class OpenAICompatibleModel implements AgentModel {
     }
     let response: Response;
     try {
-      response = await fetch(`${this.#baseUrl}/chat/completions`, {
+      response = await this.#fetchWithRetry(() => ({
         method: "POST",
         headers: {
           authorization: `Bearer ${this.#apiKey}`,
@@ -104,7 +137,7 @@ export class OpenAICompatibleModel implements AgentModel {
         },
         body: JSON.stringify(this.#requestBody(input)),
         signal: AbortSignal.timeout(this.#timeoutMs),
-      });
+      }));
     } catch (error) {
       if (error instanceof Error && error.name === "TimeoutError") {
         throw new Error(`Model request timed out after ${this.#timeoutMs}ms`);
@@ -184,7 +217,7 @@ export class OpenAICompatibleModel implements AgentModel {
   }): Promise<ModelTurn> {
     let response: Response;
     try {
-      response = await fetch(`${this.#baseUrl}/chat/completions`, {
+      response = await this.#fetchWithRetry(() => ({
         method: "POST",
         headers: {
           authorization: `Bearer ${this.#apiKey}`,
@@ -192,7 +225,7 @@ export class OpenAICompatibleModel implements AgentModel {
         },
         body: JSON.stringify(this.#requestBody({ ...input, stream: true })),
         signal: AbortSignal.timeout(this.#timeoutMs),
-      });
+      }));
     } catch (error) {
       if (error instanceof Error && error.name === "TimeoutError") {
         throw new Error(`Model request timed out after ${this.#timeoutMs}ms`);
