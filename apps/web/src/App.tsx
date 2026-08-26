@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import QRCode from "qrcode";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -69,6 +70,35 @@ function randomId(): string {
     "",
   );
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function QrCard({ url }: { url: string }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void QRCode.toDataURL(url, { width: 180, margin: 1 })
+      .then((result) => {
+        if (!cancelled) setDataUrl(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  if (!dataUrl) return null;
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-1.5 rounded-lg border border-border bg-white p-2.5">
+      <img src={dataUrl} alt="发布链接二维码" className="size-[124px]" />
+      <span className="text-[10px] text-muted-foreground">扫码在手机打开</span>
+      <a
+        href={dataUrl}
+        download="atoms-published-qr.png"
+        className="text-[10px] text-primary hover:underline"
+      >
+        下载二维码
+      </a>
+    </div>
+  );
 }
 
 const terminalStatuses = new Set<AgentRun["status"]>([
@@ -1421,14 +1451,17 @@ export function App() {
                         </Button>
                       </div>
                       {publication?.baseUrl ? (
-                        <a
-                          href={publication.baseUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block break-all text-sm text-primary hover:underline"
-                        >
-                          {publication.baseUrl}
-                        </a>
+                        <div className="flex items-start gap-4">
+                          <a
+                            href={publication.baseUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="min-w-0 flex-1 break-all text-sm text-primary hover:underline"
+                          >
+                            {publication.baseUrl}
+                          </a>
+                          <QrCard url={publication.baseUrl} />
+                        </div>
                       ) : (
                         <p className="text-sm text-muted-foreground">
                           发布后会生成一个可公开访问的链接；再次发布或切换历史版本随时可回退。
