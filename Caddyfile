@@ -1,9 +1,9 @@
-{
-	# Let's Encrypt uses this for expiry notices; point it at a real inbox.
-	email {$ACME_EMAIL}
-}
-
-{$ATOMS_DOMAIN} {
+# The site address comes from the environment. For the no-domain demo form
+# set ATOMS_SITE_ADDRESS=http://<server-ip> — explicit scheme means Caddy
+# serves plain HTTP on :80 and never attempts certificate issuance. Once a
+# domain exists, set it to the bare hostname and add an `email` block to
+# this global section to get automatic HTTPS back.
+{$ATOMS_SITE_ADDRESS} {
 	encode zstd gzip
 
 	route {

@@ -45,8 +45,9 @@ services:
       atoms:
         condition: service_healthy
     environment:
-      ATOMS_DOMAIN: ${ATOMS_DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL}
+      # "http://<server-ip>" for plain-HTTP demos, or a bare hostname once a
+      # domain exists (Caddy then enables automatic HTTPS).
+      ATOMS_SITE_ADDRESS: ${ATOMS_SITE_ADDRESS:?set in .env}
     ports:
       - "80:80"
       - "443:443"
