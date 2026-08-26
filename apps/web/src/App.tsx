@@ -1153,24 +1153,24 @@ export function App() {
                           </div>
                         ),
                       )}
-                      {events.slice(-12).map((event) => (
-                        <div
-                          key={`${event.runId}-${event.sequence}`}
-                          className={cn(
-                            "mt-1.5 flex items-baseline gap-2 text-xs leading-relaxed",
-                            event.type.includes("failed")
-                              ? "text-destructive"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                            {event.type}
-                          </span>
-                          <span className="break-words">
+                      {events
+                        .slice(-12)
+                        // The chat area already renders the full assistant
+                        // message; echoing it again as a raw event is noise.
+                        .filter((event) => event.type !== "message.delta")
+                        .map((event) => (
+                          <div
+                            key={`${event.runId}-${event.sequence}`}
+                            className={cn(
+                              "mt-1.5 text-xs leading-relaxed",
+                              event.type.includes("failed")
+                                ? "text-destructive"
+                                : "text-muted-foreground",
+                            )}
+                          >
                             {eventLabel(event)}
-                          </span>
-                        </div>
-                      ))}
+                          </div>
+                        ))}
                     </div>
                   </div>
                 )}
