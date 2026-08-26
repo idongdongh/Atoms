@@ -822,36 +822,46 @@ export function App() {
           sidebarCollapsed ? "w-14" : "w-60",
         )}
       >
-        <div className="flex items-center gap-1 px-2 py-2.5">
-          {!sidebarCollapsed && (
+        <div
+          className={cn(
+            "flex items-center gap-1 px-2 py-2.5",
+            sidebarCollapsed && "justify-center",
+          )}
+        >
+          {sidebarCollapsed ? (
             <button
               type="button"
-              onClick={() => setSelectedId(null)}
-              className="flex min-w-0 items-center gap-2 pl-1 font-semibold"
-              aria-label="回到主页"
+              onClick={() => setSidebarCollapsed(false)}
+              aria-label="展开侧栏"
+              title="展开侧栏"
+              className="grid size-6 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground"
             >
-              <span className="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground">
-                A
-              </span>
-              <span className="truncate">Atoms</span>
+              A
             </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                className="flex min-w-0 items-center gap-2 pl-1 font-semibold"
+                aria-label="回到主页"
+              >
+                <span className="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground">
+                  A
+                </span>
+                <span className="truncate">Atoms</span>
+              </button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="收起侧栏"
+                onClick={() => setSidebarCollapsed(true)}
+                className="ml-auto text-sidebar-foreground hover:bg-sidebar-accent/60"
+              >
+                <PanelLeftClose className="size-4" />
+              </Button>
+            </>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            className={cn(
-              "text-sidebar-foreground hover:bg-sidebar-accent/60",
-              !sidebarCollapsed && "ml-auto",
-            )}
-          >
-            {sidebarCollapsed ? (
-              <PanelLeftOpen className="size-4" />
-            ) : (
-              <PanelLeftClose className="size-4" />
-            )}
-          </Button>
         </div>
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
           <button
