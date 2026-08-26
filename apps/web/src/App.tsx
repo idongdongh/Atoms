@@ -447,8 +447,13 @@ export function App() {
     try {
       let chatId = selected?.chatId;
       if (!chatId) {
-        // Dyad-style first prompt: sending an idea creates the app.
-        const project = await createProjectWithName(generateCuteAppName());
+        // Dyad-style first prompt: sending an idea creates the app. The
+        // prompt (truncated) becomes the title, so it reads naturally in
+        // the user's language instead of a random English codename.
+        const title =
+          prompt.trim().replace(/\s+/g, " ").slice(0, 40) ||
+          generateCuteAppName();
+        const project = await createProjectWithName(title);
         if (!project) {
           setSending(false);
           return;
@@ -913,15 +918,17 @@ export function App() {
                     : "hover:bg-sidebar-accent/60",
                 )}
               >
-                <span
-                  className="grid size-7 shrink-0 place-items-center rounded-md text-[10px] font-semibold"
-                  style={avatarStyle(project.id)}
-                  aria-hidden="true"
-                >
-                  {initials(project.name)}
-                </span>
-                {!sidebarCollapsed && (
-                  <span className="flex min-w-0 flex-col">
+                {sidebarCollapsed ? (
+                  // The narrow rail needs a visible target per project.
+                  <span
+                    className="grid size-7 shrink-0 place-items-center rounded-md text-[10px] font-semibold"
+                    style={avatarStyle(project.id)}
+                    aria-hidden="true"
+                  >
+                    {initials(project.name)}
+                  </span>
+                ) : (
+                  <span className="flex min-w-0 flex-col py-1">
                     <span className="truncate text-sm">{project.name}</span>
                     <span className="font-mono text-[10px] text-muted-foreground">
                       {project.currentCommit.slice(0, 7)}
