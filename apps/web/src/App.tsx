@@ -8,6 +8,8 @@ import {
   type ImperativePanelHandle,
 } from "react-resizable-panels";
 import {
+  ChevronDown,
+  ChevronRight,
   Code2,
   Eye,
   FileCode2,
@@ -128,6 +130,49 @@ function eventLabel(event: AgentEvent): string {
     case "build.log":
       return event.message;
   }
+}
+
+// Consecutive tool events collapse into one summary row with a disclosure
+// toggle, so a twelve-step build does not flood the chat feed.
+function ToolCallGroup({ events }: { events: AgentEvent[] }) {
+  const [open, setOpen] = useState(false);
+  const failed = events.some((event) => event.type.includes("failed"));
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className={cn(
+          "flex cursor-pointer items-center gap-1 rounded-md text-xs transition-colors hover:text-foreground",
+          failed ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {open ? (
+          <ChevronDown className="size-3" />
+        ) : (
+          <ChevronRight className="size-3" />
+        )}
+        工具调用 · {events.length} 步
+      </button>
+      {open && (
+        <div className="mt-1 space-y-0.5 border-l border-border pl-3">
+          {events.map((event) => (
+            <div
+              key={`${event.runId}-${event.sequence}`}
+              className={cn(
+                "text-xs leading-relaxed",
+                event.type.includes("failed")
+                  ? "text-destructive"
+                  : "text-muted-foreground",
+              )}
+            >
+              {eventLabel(event)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* Deterministic pastel gradients for app avatars (Dyad AppAvatar style). */
@@ -1128,11 +1173,13 @@ export function App() {
                         ),
                       )}
                       {(() => {
-                        // Build the activity feed: consecutive streaming
-                        // deltas merge into one flowing paragraph; tool and
-                        // status events stay as single-line labels.
+                        // Build the activity feed: streaming deltas merge into
+                        // narration paragraphs (styled like speech), runs of
+                        // tool events collapse into disclosure groups, and the
+                        // remaining status events stay as single-line labels.
                         const feed: Array<
                           | { kind: "text"; key: string; text: string }
+                          | { kind: "tools"; key: string; events: AgentEvent[] }
                           | { kind: "event"; key: string; event: AgentEvent }
                         > = [];
                         for (const event of events.slice(-30)) {
@@ -1156,21 +1203,48 @@ export function App() {
                             }
                             continue;
                           }
+                          if (
+                            event.type.startsWith("tool.") ||
+                            event.type === "files.changed"
+                          ) {
+                            const last = feed.at(-1);
+                            if (last?.kind === "tools") {
+                              last.events.push(event);
+                            } else {
+                              feed.push({
+                                kind: "tools",
+                                key: `${event.runId}-${event.sequence}`,
+                                events: [event],
+                              });
+                            }
+                            continue;
+                          }
                           feed.push({
                             kind: "event",
                             key: `${event.runId}-${event.sequence}`,
                             event,
                           });
                         }
-                        return feed.map((item) =>
-                          item.kind === "text" ? (
-                            <p
-                              key={item.key}
-                              className="mt-1.5 whitespace-pre-wrap text-xs italic leading-relaxed text-muted-foreground/80"
-                            >
-                              {item.text}
-                            </p>
-                          ) : (
+                        return feed.map((item) => {
+                          if (item.kind === "text") {
+                            return (
+                              <p
+                                key={item.key}
+                                className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/85"
+                              >
+                                {item.text}
+                              </p>
+                            );
+                          }
+                          if (item.kind === "tools") {
+                            return (
+                              <ToolCallGroup
+                                key={item.key}
+                                events={item.events}
+                              />
+                            );
+                          }
+                          return (
                             <div
                               key={item.key}
                               className={cn(
@@ -1182,8 +1256,8 @@ export function App() {
                             >
                               {eventLabel(item.event)}
                             </div>
-                          ),
-                        );
+                          );
+                        });
                       })()}
                     </div>
                   </div>
