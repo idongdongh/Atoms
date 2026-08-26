@@ -1096,7 +1096,7 @@ export function App() {
                           className={cn(
                             "flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium",
                             rightTab === tab
-                              ? "bg-primary/10 text-primary dark:bg-purple-900/40 dark:text-purple-300"
+                              ? "bg-primary/10 text-primary dark:bg-stone-700/40 dark:text-stone-200"
                               : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                           )}
                         >
