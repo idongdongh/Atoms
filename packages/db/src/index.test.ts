@@ -116,4 +116,74 @@ describe("ControlPlaneStore", () => {
     ]);
     store.close();
   });
+
+  it("tracks preview access, wake requests, and idle reconcile candidates", () => {
+    const store = new ControlPlaneStore(":memory:");
+    const userId = store.ensureDevelopmentUser();
+    const project = store.createProject({
+      id: randomUUID(),
+      userId,
+      name: "Preview project",
+      slug: "preview-project-test",
+      templateId: "react-vite",
+      defaultBranch: "main",
+      currentCommit: "d".repeat(40),
+      chatId: randomUUID(),
+      createdAt: "2026-08-26T02:00:00.000Z",
+    });
+    store.setProjectPreview({
+      projectId: project.id,
+      status: "running",
+      url: "http://127.0.0.1:4100/",
+      port: 4100,
+    });
+    store.touchProjectPreview(project.id);
+
+    // Recently accessed previews are not idle; previews untouched since the
+    // cutoff are returned for the worker to stop.
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    expect(store.listProjectPreviewsForReconcile(minuteAgo)).toHaveLength(0);
+    const secondAhead = new Date(Date.now() + 1_000).toISOString();
+    expect(store.listProjectPreviewsForReconcile(secondAhead)).toMatchObject([
+      { project_id: project.id, status: "running" },
+    ]);
+
+    // Wake requests flag any existing row and are cleared on the next start.
+    expect(store.requestProjectPreviewWake(project.id)).toBe(true);
+    expect(store.requestProjectPreviewWake(randomUUID())).toBe(false);
+    store.setProjectPreview({ projectId: project.id, status: "running" });
+    expect(store.listProjectPreviewsForReconcile(secondAhead)).toMatchObject([
+      { project_id: project.id, wake_requested_at: null },
+    ]);
+    store.close();
+  });
+
+  it("reports active runs so the idle reaper can skip busy projects", () => {
+    const store = new ControlPlaneStore(":memory:");
+    const userId = store.ensureDevelopmentUser();
+    const project = store.createProject({
+      id: randomUUID(),
+      userId,
+      name: "Busy project",
+      slug: "busy-project-test",
+      templateId: "react-vite",
+      defaultBranch: "main",
+      currentCommit: "e".repeat(40),
+      chatId: randomUUID(),
+      createdAt: "2026-08-26T02:00:00.000Z",
+    });
+    expect(store.hasActiveRun(project.id)).toBe(false);
+    const run = store.createRun({
+      id: randomUUID(),
+      projectId: project.id,
+      chatId: project.chatId,
+      prompt: "Keep the worker busy",
+      idempotencyKey: "busy-1",
+    });
+    expect(store.hasActiveRun(project.id)).toBe(true);
+    store.claimNextRun();
+    store.transitionRun(run.id, "failed");
+    expect(store.hasActiveRun(project.id)).toBe(false);
+    store.close();
+  });
 });

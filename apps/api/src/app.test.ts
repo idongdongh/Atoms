@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BuildProvider } from "@atoms/sandbox-sdk";
+import { ControlPlaneStore } from "@atoms/db";
 import { createApp } from "./app.js";
 
 const apps: ReturnType<typeof createApp>[] = [];
@@ -32,9 +33,7 @@ async function registerUser(
   return { atoms_session: token };
 }
 
-async function fixture(
-  buildProvider?: BuildProvider,
-): Promise<{
+async function fixture(buildProvider?: BuildProvider): Promise<{
   app: ReturnType<typeof createApp>;
   root: string;
   session: Session;
@@ -112,9 +111,8 @@ describe("Control Plane API", () => {
       (await app.inject({ method: "GET", url: "/projects" })).statusCode,
     ).toBe(401);
     expect(
-      (
-        await app.inject({ method: "GET", url: `/projects/${project.id}` })
-      ).statusCode,
+      (await app.inject({ method: "GET", url: `/projects/${project.id}` }))
+        .statusCode,
     ).toBe(401);
     expect(
       (
@@ -156,7 +154,11 @@ describe("Control Plane API", () => {
     ).toBe(404);
     expect(
       (
-        await app.inject({ method: "GET", url: "/projects", cookies: otherSession })
+        await app.inject({
+          method: "GET",
+          url: "/projects",
+          cookies: otherSession,
+        })
       ).json().projects,
     ).toHaveLength(0);
     expect(
@@ -171,9 +173,8 @@ describe("Control Plane API", () => {
 
     // Published URLs are public: they must never leak the control plane.
     expect(
-      (
-        await app.inject({ method: "GET", url: `/published/${project.id}/` })
-      ).statusCode,
+      (await app.inject({ method: "GET", url: `/published/${project.id}/` }))
+        .statusCode,
     ).toBe(404);
 
     await app.inject({
@@ -182,9 +183,8 @@ describe("Control Plane API", () => {
       cookies: session,
     });
     expect(
-      (
-        await app.inject({ method: "GET", url: "/projects", cookies: session })
-      ).statusCode,
+      (await app.inject({ method: "GET", url: "/projects", cookies: session }))
+        .statusCode,
     ).toBe(401);
   });
 
@@ -349,9 +349,8 @@ describe("Control Plane API", () => {
     expect(second.statusCode).toBe(201);
     expect(second.json().release.id).not.toBe(firstBody.release.id);
     expect(
-      (
-        await app.inject({ method: "GET", url: `/published/${project.id}/` })
-      ).body,
+      (await app.inject({ method: "GET", url: `/published/${project.id}/` }))
+        .body,
     ).toContain("build-2");
 
     const rolledBack = await app.inject({
@@ -361,13 +360,12 @@ describe("Control Plane API", () => {
       headers: clientHeader,
     });
     expect(rolledBack.statusCode).toBe(200);
+    expect(rolledBack.json().publication.currentReleaseId).toBe(
+      firstBody.release.id,
+    );
     expect(
-      rolledBack.json().publication.currentReleaseId,
-    ).toBe(firstBody.release.id);
-    expect(
-      (
-        await app.inject({ method: "GET", url: `/published/${project.id}/` })
-      ).body,
+      (await app.inject({ method: "GET", url: `/published/${project.id}/` }))
+        .body,
     ).toContain("build-1");
 
     const list = await app.inject({
@@ -376,8 +374,42 @@ describe("Control Plane API", () => {
       cookies: session,
     });
     expect(list.json().releases).toHaveLength(2);
-    expect(list.json().publication.currentReleaseId).toBe(
-      firstBody.release.id,
+    expect(list.json().publication.currentReleaseId).toBe(firstBody.release.id);
+  });
+  it("wakes a sleeping preview on view and reports it as starting", async () => {
+    const { app, root, session, project } = await fixture();
+    const store = new ControlPlaneStore(
+      path.join(root, "control-plane.sqlite"),
     );
+    try {
+      store.setProjectPreview({ projectId: project.id, status: "stopped" });
+      const sleeping = await app.inject({
+        method: "GET",
+        url: `/projects/${project.id}/preview`,
+        cookies: session,
+      });
+      expect(sleeping.json().preview).toMatchObject({
+        status: "starting",
+        url: null,
+      });
+
+      store.setProjectPreview({
+        projectId: project.id,
+        status: "running",
+        url: "http://127.0.0.1:4321/",
+        port: 4321,
+      });
+      const running = await app.inject({
+        method: "GET",
+        url: `/projects/${project.id}/preview`,
+        cookies: session,
+      });
+      expect(running.json().preview).toMatchObject({
+        status: "running",
+        port: 4321,
+      });
+    } finally {
+      store.close();
+    }
   });
 });

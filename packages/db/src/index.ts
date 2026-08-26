@@ -131,6 +131,8 @@ type PreviewRecord = {
   port: number | null;
   error_message: string | null;
   updated_at: string;
+  last_accessed_at: string | null;
+  wake_requested_at: string | null;
 };
 
 type ReleaseRecord = {
@@ -369,7 +371,9 @@ export class ControlPlaneStore {
         url TEXT,
         port INTEGER,
         error_message TEXT,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        last_accessed_at TEXT,
+        wake_requested_at TEXT
       );
       CREATE TABLE IF NOT EXISTS project_releases (
         id TEXT PRIMARY KEY,
@@ -394,6 +398,21 @@ export class ControlPlaneStore {
     // Databases created before password support lack the password column.
     try {
       this.#database.exec("ALTER TABLE users ADD COLUMN password_hash TEXT");
+    } catch {
+      // Column already exists.
+    }
+    // Databases created before preview idle recycling lack these columns.
+    try {
+      this.#database.exec(
+        "ALTER TABLE project_previews ADD COLUMN last_accessed_at TEXT",
+      );
+    } catch {
+      // Column already exists.
+    }
+    try {
+      this.#database.exec(
+        "ALTER TABLE project_previews ADD COLUMN wake_requested_at TEXT",
+      );
     } catch {
       // Column already exists.
     }
@@ -775,7 +794,9 @@ export class ControlPlaneStore {
         current.status !== status &&
         !canTransitionAgentRun(current.status, status)
       ) {
-        throw new Error(`Invalid run transition: ${current.status} -> ${status}`);
+        throw new Error(
+          `Invalid run transition: ${current.status} -> ${status}`,
+        );
       }
       const completedAt = ["succeeded", "failed", "cancelled"].includes(status)
         ? new Date().toISOString()
@@ -922,14 +943,17 @@ export class ControlPlaneStore {
     const updatedAt = new Date().toISOString();
     this.#database
       .prepare(
-        `INSERT INTO project_previews (project_id, status, url, port, error_message, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO project_previews
+          (project_id, status, url, port, error_message, updated_at, last_accessed_at, wake_requested_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
          ON CONFLICT(project_id) DO UPDATE SET
            status = excluded.status,
            url = excluded.url,
            port = excluded.port,
            error_message = excluded.error_message,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at,
+           last_accessed_at = excluded.last_accessed_at,
+           wake_requested_at = NULL`,
       )
       .run(
         input.projectId,
@@ -938,8 +962,59 @@ export class ControlPlaneStore {
         input.port ?? null,
         input.errorMessage ?? null,
         updatedAt,
+        // A fresh start counts as access so the idle reaper gives the
+        // preview a full idle window before stopping it.
+        updatedAt,
       );
     return this.getProjectPreview(input.projectId)!;
+  }
+
+  touchProjectPreview(projectId: string): void {
+    this.#database
+      .prepare(
+        "UPDATE project_previews SET last_accessed_at = ? WHERE project_id = ?",
+      )
+      .run(new Date().toISOString(), projectId);
+  }
+
+  requestProjectPreviewWake(projectId: string): boolean {
+    const now = new Date().toISOString();
+    const result = this.#database
+      .prepare(
+        "UPDATE project_previews SET wake_requested_at = ? WHERE project_id = ?",
+      )
+      .run(now, projectId);
+    return result.changes > 0;
+  }
+
+  clearProjectPreviewWake(projectId: string): void {
+    this.#database
+      .prepare(
+        "UPDATE project_previews SET wake_requested_at = NULL WHERE project_id = ?",
+      )
+      .run(projectId);
+  }
+
+  listProjectPreviewsForReconcile(idleBefore: string): PreviewRecord[] {
+    return this.#database
+      .prepare(
+        `SELECT * FROM project_previews
+         WHERE wake_requested_at IS NOT NULL
+            OR (status = 'running' AND COALESCE(last_accessed_at, updated_at) < ?)`,
+      )
+      .all(idleBefore) as unknown as PreviewRecord[];
+  }
+
+  hasActiveRun(projectId: string): boolean {
+    const row = this.#database
+      .prepare(
+        `SELECT 1 FROM agent_runs
+         WHERE project_id = ?
+           AND status IN ('queued', 'preparing', 'running', 'waiting_approval', 'validating', 'committing')
+         LIMIT 1`,
+      )
+      .get(projectId);
+    return row !== undefined;
   }
 
   createRelease(input: {
@@ -952,7 +1027,12 @@ export class ControlPlaneStore {
         `INSERT INTO project_releases (id, project_id, commit_hash, status, error_message, created_at)
          VALUES (?, ?, ?, 'building', NULL, ?)`,
       )
-      .run(input.id, input.projectId, input.commitHash, new Date().toISOString());
+      .run(
+        input.id,
+        input.projectId,
+        input.commitHash,
+        new Date().toISOString(),
+      );
     return this.getRelease(input.id);
   }
 
@@ -972,11 +1052,7 @@ export class ControlPlaneStore {
       .prepare(
         "UPDATE project_releases SET status = ?, error_message = ? WHERE id = ?",
       )
-      .run(
-        updates.status,
-        updates.errorMessage ?? null,
-        releaseId,
-      );
+      .run(updates.status, updates.errorMessage ?? null, releaseId);
     return this.getRelease(releaseId);
   }
 

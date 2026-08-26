@@ -363,8 +363,7 @@ export function App() {
     for (const type of eventTypes) source.addEventListener(type, onEvent);
     source.onerror = () => setError("事件连接暂时中断，正在等待重连");
     return () => {
-      for (const type of eventTypes)
-        source.removeEventListener(type, onEvent);
+      for (const type of eventTypes) source.removeEventListener(type, onEvent);
       source.close();
     };
   }, [activeRun, selectedId]);
@@ -833,7 +832,12 @@ export function App() {
             )}
           </Button>
         </div>
-        <div className={cn("px-2 pb-2", sidebarCollapsed && "grid place-items-center")}>
+        <div
+          className={cn(
+            "px-2 pb-2",
+            sidebarCollapsed && "grid place-items-center",
+          )}
+        >
           {sidebarCollapsed ? (
             <Button
               variant="ghost"
@@ -870,7 +874,11 @@ export function App() {
                   }
                 }}
               />
-              <Button type="submit" size="sm" disabled={!name.trim() || creating}>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!name.trim() || creating}
+              >
                 建
               </Button>
             </form>
@@ -975,391 +983,393 @@ export function App() {
         </div>
       </aside>
       <main className="flex min-w-0 flex-1 flex-col bg-background">
-          {!selected || messages.length === 0 ? (
-            homeScreen
-          ) : (
-            <PanelGroup direction="horizontal" className="min-h-0 flex-1">
-              <Panel
-                ref={chatPanelRef}
-                defaultSize={46}
-                minSize={28}
-                collapsible
-                onCollapse={() => setChatCollapsed(true)}
-                onExpand={() => setChatCollapsed(false)}
-                className="min-w-0"
-              >
-                <div className="flex h-full min-w-0 flex-col">
-                  <header className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1.5 pt-2">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        Project
-                      </p>
-                      <h1 className="truncate text-[15px] font-semibold leading-tight">
-                        {selected.name}
-                      </h1>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <span className="mr-1 hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
-                        <span className="size-1.5 rounded-full bg-green-500" />
-                        {running
-                          ? `Agent ${activeRun?.status}`
-                          : activeRun?.status === "failed"
-                            ? "Needs attention"
-                            : "Ready"}
-                      </span>
+        {!selected || messages.length === 0 ? (
+          homeScreen
+        ) : (
+          <PanelGroup direction="horizontal" className="min-h-0 flex-1">
+            <Panel
+              ref={chatPanelRef}
+              defaultSize={46}
+              minSize={28}
+              collapsible
+              onCollapse={() => setChatCollapsed(true)}
+              onExpand={() => setChatCollapsed(false)}
+              className="min-w-0"
+            >
+              <div className="flex h-full min-w-0 flex-col">
+                <header className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1.5 pt-2">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Project
+                    </p>
+                    <h1 className="truncate text-[15px] font-semibold leading-tight">
+                      {selected.name}
+                    </h1>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="mr-1 hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+                      <span className="size-1.5 rounded-full bg-green-500" />
+                      {running
+                        ? `Agent ${activeRun?.status}`
+                        : activeRun?.status === "failed"
+                          ? "Needs attention"
+                          : "Ready"}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        showVersions && "bg-primary/10 text-primary",
+                      )}
+                      onClick={() => setShowVersions((open) => !open)}
+                    >
+                      <History className="size-4" />
+                      版本 {versions.length}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={previewCollapsed ? "展开预览" : "收起预览"}
+                      className={cn(
+                        previewCollapsed && "bg-primary/10 text-primary",
+                      )}
+                      onClick={() => {
+                        const panel = previewPanelRef.current;
+                        if (!panel) return;
+                        if (previewCollapsed) panel.expand();
+                        else panel.collapse();
+                      }}
+                    >
+                      {previewCollapsed ? (
+                        <PanelRightOpen className="size-5" />
+                      ) : (
+                        <PanelRightClose className="size-5" />
+                      )}
+                    </Button>
+                  </div>
+                </header>
+                {error && (
+                  <p
+                    role="alert"
+                    className="mx-3 mb-2 rounded-md border border-destructive px-3 py-2 text-sm text-destructive"
+                  >
+                    {error}
+                  </p>
+                )}
+                {showVersions ? (
+                  <div className="min-h-0 flex-1 overflow-y-auto border-t border-border">
+                    <div className="sticky top-0 flex items-center justify-between border-b border-border bg-background px-3 py-2">
+                      <h2 className="pl-1 text-base font-medium">
+                        Version History
+                      </h2>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className={cn(showVersions && "bg-primary/10 text-primary")}
-                        onClick={() => setShowVersions((open) => !open)}
+                        onClick={() => setShowVersions(false)}
                       >
-                        <History className="size-4" />
-                        版本 {versions.length}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={
-                          previewCollapsed ? "展开预览" : "收起预览"
-                        }
-                        className={cn(
-                          previewCollapsed && "bg-primary/10 text-primary",
-                        )}
-                        onClick={() => {
-                          const panel = previewPanelRef.current;
-                          if (!panel) return;
-                          if (previewCollapsed) panel.expand();
-                          else panel.collapse();
-                        }}
-                      >
-                        {previewCollapsed ? (
-                          <PanelRightOpen className="size-5" />
-                        ) : (
-                          <PanelRightClose className="size-5" />
-                        )}
+                        关闭
                       </Button>
                     </div>
-                  </header>
-                  {error && (
-                    <p
-                      role="alert"
-                      className="mx-3 mb-2 rounded-md border border-destructive px-3 py-2 text-sm text-destructive"
-                    >
-                      {error}
-                    </p>
-                  )}
-                  {showVersions ? (
-                    <div className="min-h-0 flex-1 overflow-y-auto border-t border-border">
-                      <div className="sticky top-0 flex items-center justify-between border-b border-border bg-background px-3 py-2">
-                        <h2 className="pl-1 text-base font-medium">
-                          Version History
-                        </h2>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowVersions(false)}
+                    {versions.map((version, index) => (
+                      <div
+                        key={version.id}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 border-b border-border px-4 py-2",
+                          version.commitHash === selected.currentCommit &&
+                            "bg-(--background-lightest)",
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold">
+                            Version {versions.length - index}（
+                            {version.commitHash.slice(0, 7)}）
+                          </p>
+                          <p
+                            className="truncate font-mono text-[11px] text-muted-foreground"
+                            title={version.message}
+                          >
+                            {version.message}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={
+                            version.commitHash === selected.currentCommit
+                          }
+                          onClick={() => void restoreVersion(version)}
+                          className="shrink-0 rounded-md bg-(--primary) px-2 py-1 text-sm font-medium text-(--primary-foreground) transition-opacity hover:opacity-90 disabled:opacity-40"
                         >
-                          关闭
+                          {version.commitHash === selected.currentCommit
+                            ? "当前"
+                            : "恢复"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    ref={feedRef}
+                    className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-4"
+                  >
+                    <div className="mx-auto flex w-full max-w-3xl flex-col py-2">
+                      {messages.map((message) =>
+                        message.role === "user" ? (
+                          <div
+                            key={message.id}
+                            className="mt-2 flex justify-end"
+                          >
+                            <div className="ml-24 rounded-lg bg-(--sidebar-accent) p-2 text-[15px] leading-relaxed">
+                              {message.content}
+                            </div>
+                          </div>
+                        ) : (
+                          <div key={message.id} className="mt-2 w-full">
+                            <p className="mb-0.5 text-[10px] font-semibold text-muted-foreground">
+                              Agent
+                            </p>
+                            <p className="break-words text-[15px] leading-relaxed">
+                              {message.content}
+                            </p>
+                          </div>
+                        ),
+                      )}
+                      {events.slice(-12).map((event) => (
+                        <div
+                          key={`${event.runId}-${event.sequence}`}
+                          className={cn(
+                            "mt-1.5 flex items-baseline gap-2 text-xs leading-relaxed",
+                            event.type.includes("failed")
+                              ? "text-destructive"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                            {event.type}
+                          </span>
+                          <span className="break-words">
+                            {eventLabel(event)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="shrink-0">{composer}</div>
+              </div>
+            </Panel>
+            <PanelResizeHandle
+              className={cn(
+                "panel-resize-handle",
+                chatCollapsed ? "w-2" : "w-1",
+              )}
+            />
+            <Panel
+              ref={previewPanelRef}
+              defaultSize={54}
+              minSize={24}
+              collapsible
+              onCollapse={() => setPreviewCollapsed(true)}
+              onExpand={() => setPreviewCollapsed(false)}
+              className="min-w-0"
+            >
+              <div className="flex h-full min-w-0 flex-col">
+                <div className="flex shrink-0 items-center gap-2 border-b border-border p-2">
+                  <div className="flex min-w-0 flex-1 gap-1">
+                    {(
+                      [
+                        ["preview", "预览", Eye],
+                        ["files", "文件", FileCode2],
+                        ["code", "代码", Code2],
+                        ["publish", "发布", Globe],
+                      ] as const
+                    ).map(([tab, label, Icon]) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        role="tab"
+                        aria-selected={rightTab === tab}
+                        onClick={() => setRightTab(tab)}
+                        className={cn(
+                          "flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium",
+                          rightTab === tab
+                            ? "bg-primary/10 text-primary dark:bg-stone-700/40 dark:text-stone-200"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        )}
+                      >
+                        <Icon className="size-4" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {publication?.baseUrl && rightTab !== "publish" && (
+                    <a
+                      href={publication.baseUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                    >
+                      已发布 ↗
+                    </a>
+                  )}
+                  <div className="ml-1 shrink-0 border-l border-border pl-2">
+                    <button
+                      type="button"
+                      aria-label={chatCollapsed ? "展开聊天" : "收起聊天"}
+                      onClick={() => {
+                        const panel = chatPanelRef.current;
+                        if (!panel) return;
+                        if (chatCollapsed) panel.expand();
+                        else panel.collapse();
+                      }}
+                      className={cn(
+                        "rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+                        chatCollapsed && "bg-primary/10 text-primary",
+                      )}
+                    >
+                      {chatCollapsed ? (
+                        <PanelLeftOpen className="size-5" />
+                      ) : (
+                        <PanelLeftClose className="size-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {rightTab === "preview" &&
+                    (preview?.url ? (
+                      <iframe
+                        title="项目 Preview"
+                        key={selected.currentCommit}
+                        src={preview.url}
+                        className="h-full w-full flex-1 bg-white"
+                      />
+                    ) : (
+                      <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+                        <strong className="text-sm">
+                          {preview?.status === "failed"
+                            ? "Preview 启动失败"
+                            : preview?.status === "starting"
+                              ? "正在启动 Preview…"
+                              : "预览服务尚未连接"}
+                        </strong>
+                        <p className="mt-1.5 max-w-[320px] text-sm leading-relaxed text-muted-foreground">
+                          {preview?.status === "starting"
+                            ? "正在启动开发服务器，通常只需要几秒。"
+                            : (preview?.errorMessage ??
+                              "提交需求后，Agent 完成修改，这里会显示实际运行结果。")}
+                        </p>
+                      </div>
+                    ))}
+                  {rightTab === "files" && (
+                    <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto p-2">
+                      {files.map((file) => (
+                        <button
+                          key={file.path}
+                          type="button"
+                          disabled={file.kind === "directory"}
+                          onClick={() =>
+                            file.kind === "file"
+                              ? void openFile(file.path)
+                              : undefined
+                          }
+                          className={cn(
+                            "flex w-full items-center gap-2 overflow-wrap-anywhere rounded-md px-2 py-1.5 text-left font-mono text-xs",
+                            activeFile?.path === file.path
+                              ? "bg-primary/10 text-primary"
+                              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                          )}
+                        >
+                          <span aria-hidden="true">
+                            {file.kind === "directory" ? "▸" : "·"}
+                          </span>
+                          {file.path}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {rightTab === "code" &&
+                    (activeFile ? (
+                      <pre className="scrollbar-on-hover m-0 min-h-0 flex-1 overflow-auto bg-(--background-darker) p-4 font-mono text-xs leading-relaxed">
+                        <code>{activeFile.content}</code>
+                      </pre>
+                    ) : (
+                      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                        在“文件”标签选择一个文件查看内容
+                      </div>
+                    ))}
+                  {rightTab === "publish" && (
+                    <div className="scrollbar-on-hover min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="text-sm font-semibold">
+                          发布应用
+                        </strong>
+                        <Button
+                          size="sm"
+                          disabled={publishing || !!running}
+                          onClick={() => void publishProject()}
+                        >
+                          <Globe className="size-4" />
+                          {publishing ? "构建中…" : "发布当前版本"}
                         </Button>
                       </div>
-                      {versions.map((version, index) => (
+                      {publication?.baseUrl ? (
+                        <a
+                          href={publication.baseUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block break-all text-sm text-primary hover:underline"
+                        >
+                          {publication.baseUrl}
+                        </a>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          发布后会生成一个可公开访问的链接；再次发布或切换历史版本随时可回退。
+                        </p>
+                      )}
+                      {releases.slice(0, 8).map((release) => (
                         <div
-                          key={version.id}
+                          key={release.id}
                           className={cn(
-                            "flex cursor-pointer items-center gap-3 border-b border-border px-4 py-2",
-                            version.commitHash === selected.currentCommit &&
-                              "bg-(--background-lightest)",
+                            "flex items-center gap-3 rounded-lg border border-border px-3 py-2.5",
+                            release.id === publication?.currentReleaseId &&
+                              "border-primary",
                           )}
                         >
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-semibold">
-                              Version {versions.length - index}（
-                              {version.commitHash.slice(0, 7)}）
+                              {release.createdAt.slice(0, 16).replace("T", " ")}
+                              {release.id === publication?.currentReleaseId
+                                ? " · 当前线上版本"
+                                : ""}
                             </p>
-                            <p
-                              className="truncate font-mono text-[11px] text-muted-foreground"
-                              title={version.message}
-                            >
-                              {version.message}
+                            <p className="font-mono text-[11px] text-muted-foreground">
+                              {release.status} ·{" "}
+                              {release.commitHash.slice(0, 7)}
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            disabled={
-                              version.commitHash === selected.currentCommit
-                            }
-                            onClick={() => void restoreVersion(version)}
-                            className="shrink-0 rounded-md bg-(--primary) px-2 py-1 text-sm font-medium text-(--primary-foreground) transition-opacity hover:opacity-90 disabled:opacity-40"
-                          >
-                            {version.commitHash === selected.currentCommit
-                              ? "当前"
-                              : "恢复"}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div
-                      ref={feedRef}
-                      className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-4"
-                    >
-                      <div className="mx-auto flex w-full max-w-3xl flex-col py-2">
-                        {messages.map((message) =>
-                          message.role === "user" ? (
-                            <div
-                              key={message.id}
-                              className="mt-2 flex justify-end"
-                            >
-                              <div className="ml-24 rounded-lg bg-(--sidebar-accent) p-2 text-[15px] leading-relaxed">
-                                {message.content}
-                              </div>
-                            </div>
-                          ) : (
-                            <div key={message.id} className="mt-2 w-full">
-                              <p className="mb-0.5 text-[10px] font-semibold text-muted-foreground">
-                                Agent
-                              </p>
-                              <p className="break-words text-[15px] leading-relaxed">
-                                {message.content}
-                              </p>
-                            </div>
-                          ),
-                        )}
-                        {events.slice(-12).map((event) => (
-                          <div
-                            key={`${event.runId}-${event.sequence}`}
-                            className={cn(
-                              "mt-1.5 flex items-baseline gap-2 text-xs leading-relaxed",
-                              event.type.includes("failed")
-                                ? "text-destructive"
-                                : "text-muted-foreground",
-                            )}
-                          >
-                            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                              {event.type}
-                            </span>
-                            <span className="break-words">
-                              {eventLabel(event)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="shrink-0">{composer}</div>
-                </div>
-              </Panel>
-              <PanelResizeHandle
-                className={cn(
-                  "panel-resize-handle",
-                  chatCollapsed ? "w-2" : "w-1",
-                )}
-              />
-              <Panel
-                ref={previewPanelRef}
-                defaultSize={54}
-                minSize={24}
-                collapsible
-                onCollapse={() => setPreviewCollapsed(true)}
-                onExpand={() => setPreviewCollapsed(false)}
-                className="min-w-0"
-              >
-                <div className="flex h-full min-w-0 flex-col">
-                  <div className="flex shrink-0 items-center gap-2 border-b border-border p-2">
-                    <div className="flex min-w-0 flex-1 gap-1">
-                      {(
-                        [
-                          ["preview", "预览", Eye],
-                          ["files", "文件", FileCode2],
-                          ["code", "代码", Code2],
-                          ["publish", "发布", Globe],
-                        ] as const
-                      ).map(([tab, label, Icon]) => (
-                        <button
-                          key={tab}
-                          type="button"
-                          role="tab"
-                          aria-selected={rightTab === tab}
-                          onClick={() => setRightTab(tab)}
-                          className={cn(
-                            "flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium",
-                            rightTab === tab
-                              ? "bg-primary/10 text-primary dark:bg-stone-700/40 dark:text-stone-200"
-                              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                          )}
-                        >
-                          <Icon className="size-4" />
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    {publication?.baseUrl && rightTab !== "publish" && (
-                      <a
-                        href={publication.baseUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="shrink-0 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      >
-                        已发布 ↗
-                      </a>
-                    )}
-                    <div className="ml-1 shrink-0 border-l border-border pl-2">
-                      <button
-                        type="button"
-                        aria-label={chatCollapsed ? "展开聊天" : "收起聊天"}
-                        onClick={() => {
-                          const panel = chatPanelRef.current;
-                          if (!panel) return;
-                          if (chatCollapsed) panel.expand();
-                          else panel.collapse();
-                        }}
-                        className={cn(
-                          "rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
-                          chatCollapsed && "bg-primary/10 text-primary",
-                        )}
-                      >
-                        {chatCollapsed ? (
-                          <PanelLeftOpen className="size-5" />
-                        ) : (
-                          <PanelLeftClose className="size-5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex min-h-0 flex-1 flex-col">
-                    {rightTab === "preview" &&
-                      (preview?.url ? (
-                        <iframe
-                          title="项目 Preview"
-                          key={selected.currentCommit}
-                          src={preview.url}
-                          className="h-full w-full flex-1 bg-white"
-                        />
-                      ) : (
-                        <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-                          <strong className="text-sm">
-                            {preview?.status === "failed"
-                              ? "Preview 启动失败"
-                              : "预览服务尚未连接"}
-                          </strong>
-                          <p className="mt-1.5 max-w-[320px] text-sm leading-relaxed text-muted-foreground">
-                            {preview?.errorMessage ??
-                              "提交需求后，Agent 完成修改，这里会显示实际运行结果。"}
-                          </p>
-                        </div>
-                      ))}
-                    {rightTab === "files" && (
-                      <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto p-2">
-                        {files.map((file) => (
-                          <button
-                            key={file.path}
-                            type="button"
-                            disabled={file.kind === "directory"}
-                            onClick={() =>
-                              file.kind === "file"
-                                ? void openFile(file.path)
-                                : undefined
-                            }
-                            className={cn(
-                              "flex w-full items-center gap-2 overflow-wrap-anywhere rounded-md px-2 py-1.5 text-left font-mono text-xs",
-                              activeFile?.path === file.path
-                                ? "bg-primary/10 text-primary"
-                                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                            )}
-                          >
-                            <span aria-hidden="true">
-                              {file.kind === "directory" ? "▸" : "·"}
-                            </span>
-                            {file.path}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {rightTab === "code" &&
-                      (activeFile ? (
-                        <pre className="scrollbar-on-hover m-0 min-h-0 flex-1 overflow-auto bg-(--background-darker) p-4 font-mono text-xs leading-relaxed">
-                          <code>{activeFile.content}</code>
-                        </pre>
-                      ) : (
-                        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                          在“文件”标签选择一个文件查看内容
-                        </div>
-                      ))}
-                    {rightTab === "publish" && (
-                      <div className="scrollbar-on-hover min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
-                        <div className="flex items-center justify-between gap-3">
-                          <strong className="text-sm font-semibold">
-                            发布应用
-                          </strong>
                           <Button
+                            variant="outline"
                             size="sm"
-                            disabled={publishing || !!running}
-                            onClick={() => void publishProject()}
+                            disabled={
+                              release.status !== "ready" ||
+                              release.id === publication?.currentReleaseId
+                            }
+                            onClick={() => void activateRelease(release)}
                           >
-                            <Globe className="size-4" />
-                            {publishing ? "构建中…" : "发布当前版本"}
+                            {release.id === publication?.currentReleaseId
+                              ? "线上"
+                              : "切到此版本"}
                           </Button>
                         </div>
-                        {publication?.baseUrl ? (
-                          <a
-                            href={publication.baseUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="block break-all text-sm text-primary hover:underline"
-                          >
-                            {publication.baseUrl}
-                          </a>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            发布后会生成一个可公开访问的链接；再次发布或切换历史版本随时可回退。
-                          </p>
-                        )}
-                        {releases.slice(0, 8).map((release) => (
-                          <div
-                            key={release.id}
-                            className={cn(
-                              "flex items-center gap-3 rounded-lg border border-border px-3 py-2.5",
-                              release.id === publication?.currentReleaseId &&
-                                "border-primary",
-                            )}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-semibold">
-                                {release.createdAt
-                                  .slice(0, 16)
-                                  .replace("T", " ")}
-                                {release.id === publication?.currentReleaseId
-                                  ? " · 当前线上版本"
-                                  : ""}
-                              </p>
-                              <p className="font-mono text-[11px] text-muted-foreground">
-                                {release.status} ·{" "}
-                                {release.commitHash.slice(0, 7)}
-                              </p>
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={
-                                release.status !== "ready" ||
-                                release.id === publication?.currentReleaseId
-                              }
-                              onClick={() => void activateRelease(release)}
-                            >
-                              {release.id === publication?.currentReleaseId
-                                ? "线上"
-                                : "切到此版本"}
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </Panel>
-            </PanelGroup>
-          )}
-        </main>
+              </div>
+            </Panel>
+          </PanelGroup>
+        )}
+      </main>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { ControlPlaneStore } from "@atoms/db";
 import { LocalDevelopmentSandboxProvider } from "@atoms/sandbox-sdk";
 import { AgentRunner } from "./agent.js";
 import { createConfiguredModel, type AgentModel } from "./model.js";
+import { reconcileProjectPreviews } from "./preview.js";
 
 export function getWorkerIdentity() {
   return {
@@ -63,6 +64,9 @@ async function startWorker(): Promise<void> {
     });
   }
   const pollMs = Number(process.env.ATOMS_WORKER_POLL_MS ?? 300);
+  const previewIdleMs = Number(process.env.ATOMS_PREVIEW_IDLE_MS ?? 600_000);
+  const reconcileIntervalMs = 2_000;
+  let lastReconcileAt = 0;
   console.log(
     JSON.stringify({
       ...getWorkerIdentity(),
@@ -78,8 +82,26 @@ async function startWorker(): Promise<void> {
         ...(previewProvider ? { previewProvider } : {}),
       };
       const processed = await processNextRun(processInput);
-      if (!processed)
+      if (!processed) {
+        // Between runs the worker also reconciles previews: stopping idle
+        // dev servers and waking sleeping ones so 2C2G-class hosts are not
+        // pinned by forgotten previews.
+        if (
+          previewProvider &&
+          Date.now() - lastReconcileAt >= reconcileIntervalMs
+        ) {
+          lastReconcileAt = Date.now();
+          await reconcileProjectPreviews({
+            store,
+            previewProvider,
+            workspaceRoot,
+            idleMs: previewIdleMs,
+          }).catch((error: unknown) => {
+            console.error("Preview reconcile failed", error);
+          });
+        }
         await new Promise((resolve) => setTimeout(resolve, pollMs));
+      }
     }
   } finally {
     store.close();

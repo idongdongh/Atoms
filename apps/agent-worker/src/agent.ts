@@ -21,6 +21,7 @@ import type {
   ModelToolCall,
   ModelToolDefinition,
 } from "./model.js";
+import { startProjectPreview } from "./preview.js";
 
 const listFilesArgs = z.object({}).passthrough();
 const emptyArgs = z.object({}).passthrough();
@@ -304,7 +305,13 @@ export class AgentRunner {
           });
           emit({ type: "run.completed", commitHash });
           if (this.#previewProvider) {
-            void this.#startPreview(run, workspaceRoot, emit);
+            void startProjectPreview({
+              store: this.#store,
+              previewProvider: this.#previewProvider,
+              projectId: run.projectId,
+              workspaceRoot,
+              emit,
+            });
           }
         } catch (error) {
           if (this.#store.isRunCancelled(run.id)) {
@@ -337,45 +344,6 @@ export class AgentRunner {
     return (event) => {
       this.#store.appendAgentEvent({ ...event, runId });
     };
-  }
-
-  async #startPreview(
-    run: AgentRun,
-    workspaceRoot: string,
-    emit: (event: EventInput) => void,
-  ): Promise<void> {
-    emit({ type: "preview.starting" });
-    this.#store.setProjectPreview({
-      projectId: run.projectId,
-      status: "starting",
-      url: null,
-      port: null,
-      errorMessage: null,
-    });
-    try {
-      const preview = await this.#previewProvider!.start({
-        projectId: run.projectId,
-        workspaceRoot,
-      });
-      this.#store.setProjectPreview({
-        projectId: run.projectId,
-        status: "running",
-        url: preview.url ?? null,
-        port: preview.port ?? null,
-        errorMessage: null,
-      });
-      if (preview.url) emit({ type: "preview.ready", url: preview.url });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.#store.setProjectPreview({
-        projectId: run.projectId,
-        status: "failed",
-        url: null,
-        port: null,
-        errorMessage: message,
-      });
-      emit({ type: "preview.failed", error: message });
-    }
   }
 }
 

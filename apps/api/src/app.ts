@@ -441,7 +441,20 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       if (!findOwnedProject(request, request.params.projectId)) {
         return notFound(reply);
       }
-      const preview = store.getProjectPreview(request.params.projectId);
+      const stored = store.getProjectPreview(request.params.projectId);
+      if (stored) touchPreviewAccess(request.params.projectId);
+      // Sleeping previews wake on view: the API flags the wake request and
+      // reports "starting" so the client keeps polling while the worker
+      // restarts the dev server.
+      const wakeRequested =
+        stored !== null &&
+        (stored.status === "stopped" || stored.status === "failed") &&
+        store.requestProjectPreviewWake(request.params.projectId);
+      const preview = stored
+        ? wakeRequested
+          ? { ...stored, status: "starting" as const, errorMessage: null }
+          : stored
+        : null;
       // The preview child listens on 127.0.0.1 only. Locally the browser can
       // reach it directly (cross-origin, no shared cookies with the builder).
       // In production ATOMS_PREVIEW_PUBLIC_ORIGIN points at a dedicated
@@ -454,12 +467,22 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
             : `http://127.0.0.1:${preview.port}/`
           : null;
       return {
-        preview: preview
-          ? { ...preview, url: publicUrl ?? preview.url }
-          : null,
+        preview: preview ? { ...preview, url: publicUrl ?? preview.url } : null,
       };
     },
   );
+
+  // Preview access tracking feeds the worker's idle reaper. One write per
+  // minute of traffic per project is enough resolution for a 10-minute idle
+  // window and keeps the hot proxy path write-free.
+  const previewAccessTouches = new Map<string, number>();
+
+  function touchPreviewAccess(projectId: string): void {
+    const now = Date.now();
+    if (now - (previewAccessTouches.get(projectId) ?? 0) < 60_000) return;
+    previewAccessTouches.set(projectId, now);
+    store.touchProjectPreview(projectId);
+  }
 
   const servePreviewProxy = (
     request: FastifyRequest,
@@ -476,6 +499,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       });
       return;
     }
+    touchPreviewAccess(projectId);
     const prefixIndex = request.url.indexOf(routePrefix);
     const tailPath =
       prefixIndex === -1
@@ -524,6 +548,9 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       },
     );
     upstream.on("error", () => {
+      // The dev server died without updating its row (e.g. an OOM kill).
+      // Flag a wake so the worker reconciles the stale "running" state.
+      store.requestProjectPreviewWake(projectId);
       if (!reply.raw.headersSent) {
         reply.raw.writeHead(502, { "content-type": "text/plain" });
       }
@@ -593,8 +620,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
           publication: publicationView(request, publication),
         };
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         store.completeRelease(release.id, {
           status: "failed",
           errorMessage: message.slice(0, 500) || "Build failed",
@@ -618,9 +644,7 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       const publication = store.getPublication(request.params.projectId);
       return {
         releases: store.listReleases(request.params.projectId),
-        publication: publication
-          ? publicationView(request, publication)
-          : null,
+        publication: publication ? publicationView(request, publication) : null,
       };
     },
   );
