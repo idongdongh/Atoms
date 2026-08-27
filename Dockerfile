@@ -15,10 +15,13 @@ COPY packages ./packages
 COPY templates ./templates
 RUN pnpm install --frozen-lockfile
 RUN pnpm -r --if-present build
-# Pre-install the generated-app template's dependencies so every new project
-# starts its preview instantly (node_modules ship inside the image; the
-# workspace-level install then becomes a no-op).
-RUN pnpm --dir templates/react-vite install --ignore-workspace --frozen-lockfile
+# Seed a pnpm store with the generated-app template's dependencies. The store
+# is copied to the data volume on first boot, so every project's preview
+# install hard-links locally instead of downloading from npm. The template
+# directory itself must stay clean (node_modules is a reserved entry for
+# workspace instantiation).
+RUN pnpm --dir templates/react-vite install --ignore-workspace --frozen-lockfile --store-dir /app/.pnpm-seed \
+  && rm -rf templates/react-vite/node_modules
 
 # ---------------------------------------------------------------------------
 # Runtime stage (compose target: runtime). The whole workspace is copied
