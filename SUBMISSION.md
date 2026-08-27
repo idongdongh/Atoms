@@ -6,7 +6,6 @@
 - 代码仓库：<https://github.com/idongdongh/Atoms>
 - 已验证的生成样例：[待办事项（数据库版）](http://119.28.133.244/published/f8d2b1a1-388c-4499-bcb8-d7006ed577f5/)（一句话生成，数据存 Supabase，刷新后仍在）
 - 部署形态与操作手册：[docs/deployment.md](docs/deployment.md)
-- 开发计划与完成状态：[docs/phase-2-development-plan.md](docs/phase-2-development-plan.md) §0
 
 ## 1. 五分钟走查（覆盖笔试要求的完整流程）
 
@@ -25,7 +24,7 @@
 
 按产品定位拆成 Control Plane（API）/ Workspace Plane（Git 工作区）/ Execution Plane（Agent Worker + Sandbox），契约先行（Zod Schema 双端校验，不只靠 TS 类型）。笔试交付用**单机 Demo 拓扑**（[ADR 0005](docs/adr/0005-demo-runtime-topology.md)）：API + Worker 双进程、SQLite 元数据、本地 Git 裸仓库、受控子进程 Sandbox；每个取舍都对应文档里的企业级演进路径（容器拆分 → 状态外移 → Firecracker/gVisor 沙箱集群）。
 
-### 2.2 对标 Dyad：验证过的机制照搬，部署形态换成服务化
+### 2.2 与开源参考实现（Dyad，MIT）的机制对照
 
 | 机制                                            | Dyad（Electron 本地）        | 本项目（服务器）                                                                                                                                                          |
 | ----------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

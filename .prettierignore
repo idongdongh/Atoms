@@ -1,5 +1,4 @@
 node_modules
 dist
 coverage
-dyad
 pnpm-lock.yaml

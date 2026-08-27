@@ -2,11 +2,11 @@
 
 **用一句话描述想法，Agent 在隔离工作区里把它变成可运行、可发布的应用。**
 
-在线体验：<http://119.28.133.244>（演示账号 `demo@atoms.test` / `demo-password`）· 笔试交付说明：[SUBMISSION.md](SUBMISSION.md)
+在线体验：<http://119.28.133.244>（演示账号 `demo@atoms.test` / `demo-password`）· 交付说明：[SUBMISSION.md](SUBMISSION.md)
 
 ![演示：主页输入想法，Agent 生成应用](assets/demo-v2.gif)
 
-产品体验参考 [Atoms](https://atoms.dev) / [Dyad](https://dyad.sh)，但按多用户 Web 系统重新设计：控制面、工作区、执行面三平面分离，契约先行（Zod 运行时校验），Git 是代码事实来源，数据库只存元数据。
+按多用户 Web 系统设计：控制面、工作区、执行面三平面分离，契约先行（Zod 运行时校验），Git 是代码事实来源，数据库只存元数据。
 
 ## 核心能力
 
@@ -27,7 +27,7 @@
 
 ```mermaid
 flowchart LR
-    B["浏览器 · Dyad 风格 SPA"] -->|"/api"| CA["Caddy<br/>静态 SPA + 反代"]
+    B["浏览器 · React SPA"] -->|"/api"| CA["Caddy<br/>静态 SPA + 反代"]
     B -->|"/p/&lt;id&gt;/ 预览"| CA
     B -->|"/published/&lt;id&gt;/"| CA
     CA --> API["API · Control Plane<br/>Fastify + SQLite"]
@@ -57,7 +57,7 @@ pnpm dev     # API :3000 + Web :5173 + Worker（离线 demo 模型，无需任�
 ```text
 apps/api            Control Plane：HTTP API、预览/发布网关、会话与多用户隔离
 apps/agent-worker   Execution Plane：Agent 运行器、结构化工具、预览生命周期
-apps/web            构建器前端（Dyad 前端移植，MIT 署名，Manus 暖纸主题）
+apps/web            构建器前端（React SPA，部分 UI 组件移植自 MIT 开源实现并保留署名）
 packages/contracts  全部共享契约（Zod Schema，运行时校验）
 packages/db         平台元数据存储（node:sqlite, WAL）
 packages/workspace-sdk   工作区 Git 操作、写锁、模板实例化
@@ -73,4 +73,4 @@ docs/               ADR、开发计划、部署手册
 - 长任务事件持久化、按序列号可重放，SSE 断线用 `Last-Event-ID` 续传
 - 每项目同一时刻最多一个写入 Run（claim 事务），所有写请求带幂等键
 
-更多文档：[SUBMISSION.md](SUBMISSION.md)（交付说明）· [docs/README.md](docs/README.md)（文档索引）· [AGENTS.md](AGENTS.md)（协作规则）
+更多文档：[SUBMISSION.md](SUBMISSION.md)（交付说明）· [docs/README.md](docs/README.md)（文档索引）

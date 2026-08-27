@@ -9,7 +9,6 @@ coverage/
 .env.*
 !.env.example
 .vercel/
-dyad/
 .atoms-data/
 .zcode/
 .impeccable/
