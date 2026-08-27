@@ -1,4 +1,4 @@
-/* Ported from Dyad (https://github.com/dyad-sh/dyad), MIT License. */
+/* Button built on class-variance-authority variants. */
 import type * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 

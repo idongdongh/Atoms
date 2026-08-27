@@ -1,8 +1,5 @@
 /*
- * Ported from Dyad (https://github.com/dyad-sh/dyad), MIT License.
- * Fonts are provided via @fontsource/geist and @fontsource/geist-mono
- * (same family names) instead of Dyad's node_modules @font-face paths,
- * and the Electron title-bar offset is adapted to the web header.
+ * Global styles. Fonts come from @fontsource/geist and @fontsource/geist-mono.
  */
 
 @import "tailwindcss";

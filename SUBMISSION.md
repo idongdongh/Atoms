@@ -1,6 +1,6 @@
 # Atoms Demo — 笔试交付说明
 
-> 一个参考 [Atoms](https://atoms.dev)/[Dyad](https://dyad.sh) 的 Web AI 应用生成平台：用自然语言描述想法，Agent 在隔离工作区生成/修改代码，实时预览运行效果，一键发布到公网并支持秒级回退。
+> 一个 Web AI 应用生成平台：用自然语言描述想法，Agent 在隔离工作区生成/修改代码，实时预览运行效果，一键发布到公网并支持秒级回退。
 
 - 在线体验：<http://119.28.133.244>（注册任意邮箱即可；演示账号 `demo@atoms.test` / `demo-password`）
 - 代码仓库：<https://github.com/idongdongh/Atoms>
@@ -24,17 +24,6 @@
 
 按产品定位拆成 Control Plane（API）/ Workspace Plane（Git 工作区）/ Execution Plane（Agent Worker + Sandbox），契约先行（Zod Schema 双端校验，不只靠 TS 类型）。笔试交付用**单机 Demo 拓扑**（[ADR 0005](docs/adr/0005-demo-runtime-topology.md)）：API + Worker 双进程、SQLite 元数据、本地 Git 裸仓库、受控子进程 Sandbox；每个取舍都对应文档里的企业级演进路径（容器拆分 → 状态外移 → Firecracker/gVisor 沙箱集群）。
 
-### 2.2 与开源参考实现（Dyad，MIT）的机制对照
-
-| 机制                                            | Dyad（Electron 本地）        | 本项目（服务器）                                                                                                                                                          |
-| ----------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 预览 = 子进程 dev server，确定性端口 + 稳定 URL | ✅                           | ✅ 相同；浏览器经 `/p/<id>/` 公开网关访问（HTML 注入 `<base>`），不再要求本地跨源直连                                                                                     |
-| 每轮对话一个 git commit，restore 非破坏         | ✅                           | ✅ 相同；版本索引入 SQLite                                                                                                                                                |
-| 重启 = 单写者串行派发（appRunActorService）     | ✅                           | ✅ 预览启停只由 Worker 串行执行；API 仅置唤醒标志（`project_previews.wake_requested_at`）跨进程协调                                                                       |
-| 生成应用数据接 Supabase                         | ✅                           | 已实现：Agent 受控建表工具（白名单 + 项目前缀隔离 + RLS），前端 anon key 直连，service_role 仅 worker 持有（[ADR 0006](docs/adr/0006-generated-app-data-and-publish.md)） |
-| 发布                                            | Vercel/GitHub 集成           | 自有路径托管：不可变 release + 激活指针，`/published/<id>/`（Atoms/Lovable 模式）                                                                                         |
-| 前端                                            | React + Tailwind v4 + shadcn | 直接移植（MIT，保留署名），换 Manus 暖纸主题与控制台式侧栏                                                                                                                |
-
 ### 2.3 关键设计决策
 
 - **Git 是代码事实来源，数据库只存元数据**：项目、消息、运行状态、版本索引、release 指针全部可从工作区 + 事件流重建审计。
@@ -53,7 +42,7 @@
 | 模型接入                          | ✅   | OpenAI 兼容（DeepSeek 已配置就绪）+ 离线 demo 模型；120s 超时                                                       |
 | 预览网关 + 生命周期               | ✅   | dev server 子进程、跨源/网关两种模式、启动重试、空闲回收、打开即唤醒（公网 `/p/` 只读，不能触发重启）               |
 | 发布与回退                        | ✅   | 受控构建、不可变 release、激活指针、公网 URL、秒级回退                                                              |
-| 前端体验                          | ✅   | Dyad 式双状态流（主页 → 分栏工作台）、面板展开收起、Manus 暖纸主题                                                  |
+| 前端体验                          | ✅   | 双状态流（主页 → 分栏工作台）、面板展开收起、暖纸主题                                                               |
 | 部署产物                          | ✅   | Dockerfile（多阶段）+ compose + Caddy（自动 HTTPS、SSE 不缓冲）+ `.env.example` + [部署手册](docs/deployment.md)    |
 | 生成应用数据后端（Supabase lite） | ✅   | 已上线并验收：一句话生成带数据库 CRUD 的待办应用（实测 24 秒），数据真实持久化，刷新后仍在                          |
 | 在线环境                          | ✅   | 腾讯云香港 2C2G，Docker Compose + Caddy，`http://119.28.133.244`（无域名 IP 直连形态；DeepSeek 真模型全链路已冒烟） |
@@ -64,7 +53,7 @@
 
 1. ~~M-B1 全栈生成~~：已完成（`db_create_table` 受控建表 + RLS + 预配置 client，实测 24 秒生成可用数据库应用）。
 2. **M-部署验收**：~~上线 + 真模型冒烟~~ 已完成（首次实测：DeepSeek 一句话生成番茄钟约 80 秒、预览自动就绪、发布 1.5 秒）；基线数据待积累。
-3. **GitHub 双向同步 / Vercel 发布**（Dyad 路径已调研：PAT + gitSource）。
+3. **GitHub 双向同步 / Vercel 发布**（PAT + gitSource 路径已调研）。
 4. **规模化前必要项**：配额与滥用防护、预览签名授权、制品库与 Staging 流量切换、Sandbox 容器化。
 
 ## 5. 本地运行
@@ -83,7 +72,7 @@ pnpm check        # 格式 + 类型检查 + 全部测试 + 构建
 ```text
 apps/api            Control Plane：HTTP API、预览/发布网关、会话与隔离
 apps/agent-worker   Execution Plane：Agent 运行器、结构化工具、预览生命周期对账
-apps/web            构建器前端（Dyad 移植 + Manus 主题）
+apps/web            构建器前端（React SPA + 暖纸主题）
 packages/contracts  全部共享契约（Zod Schema，运行时校验）
 packages/db         SQLite 元数据存储（node:sqlite, WAL）
 packages/workspace-sdk  工作区 Git 操作、写锁、模板实例化

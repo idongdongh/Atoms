@@ -7,7 +7,7 @@ import "@fontsource/geist/700.css";
 import "@fontsource/geist-mono/400.css";
 import "./globals.css";
 
-// Dyad follows the system color scheme by toggling .dark on the root.
+// Follow the system color scheme by toggling .dark on the root.
 if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
   document.documentElement.classList.add("dark");
 }

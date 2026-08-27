@@ -220,7 +220,7 @@ function ToolCallGroup({ events }: { events: AgentEvent[] }) {
   );
 }
 
-/* Deterministic pastel gradients for app avatars (Dyad AppAvatar style). */
+/* Deterministic pastel gradients for app avatars. */
 const avatarPalettes: ReadonlyArray<readonly [string, string]> = [
   ["#fecaca", "#fda4af"],
   ["#fed7aa", "#fdba74"],
@@ -329,7 +329,7 @@ export function App() {
     void requestJson<{ projects: Project[] }>("/api/projects")
       .then(({ projects: loaded }) => {
         setProjects(loaded);
-        // Land on the home screen like Dyad's "/" route; selecting a project
+        // Land on the home screen; selecting a project
         // from the sidebar opens its chat page.
         setSelectedId(null);
         setState("ready");
@@ -565,7 +565,7 @@ export function App() {
     try {
       let chatId = selected?.chatId;
       if (!chatId) {
-        // Dyad-style first prompt: sending an idea creates the app. The
+        // First prompt creates the app. The
         // prompt (truncated) becomes the title, so it reads naturally in
         // the user's language instead of a random English codename.
         const title =
@@ -890,7 +890,7 @@ export function App() {
     </form>
   );
 
-  // Dyad-style home screen: the landing page before the first prompt.
+  // Home screen: the landing page before the first prompt.
   const homeScreen = (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center p-8">

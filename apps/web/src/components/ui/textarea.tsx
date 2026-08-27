@@ -1,4 +1,4 @@
-/* Ported from Dyad (https://github.com/dyad-sh/dyad), MIT License. */
+/* Styled multiline input bound to the design tokens. */
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
