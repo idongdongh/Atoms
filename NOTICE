@@ -1,0 +1,14 @@
+This project includes the following open-source components:
+
+- React, React DOM — MIT License
+- Vite, @vitejs/plugin-react — MIT License
+- Tailwind CSS, @tailwindcss/vite — MIT License
+- lucide-react — ISC License
+- @supabase/supabase-js — MIT License
+- Fastify — MIT License
+- Zod — MIT License
+- react-resizable-panels, react-markdown, remark-gfm — MIT License
+- Caddy — Apache 2.0 License
+
+Some UI components are adapted from an MIT-licensed open-source implementation
+with attribution preserved in the file headers.
