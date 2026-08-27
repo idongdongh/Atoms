@@ -4,7 +4,7 @@
 
 在线体验：<http://119.28.133.244>（演示账号 `demo@atoms.test` / `demo-password`）· 笔试交付说明：[SUBMISSION.md](SUBMISSION.md)
 
-![演示：主页输入想法，Agent 生成应用](assets/demo.gif)
+![演示：主页输入想法，Agent 生成应用](assets/demo-v2.gif)
 
 产品体验参考 [Atoms](https://atoms.dev) / [Dyad](https://dyad.sh)，但按多用户 Web 系统重新设计：控制面、工作区、执行面三平面分离，契约先行（Zod 运行时校验），Git 是代码事实来源，数据库只存元数据。
 
