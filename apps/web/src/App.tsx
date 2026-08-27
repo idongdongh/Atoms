@@ -1077,8 +1077,11 @@ export function App() {
           )}
         >
           {!sidebarCollapsed && (
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-              {authUser.email}
+            <span
+              className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+              title={authUser.email}
+            >
+              {authUser.name || authUser.email}
             </span>
           )}
           <Button
